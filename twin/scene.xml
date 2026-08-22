@@ -1,4 +1,4 @@
-<mujoco model="scaletwin">
+<mujoco model="bidex">
   <compiler angle="radian" autolimits="true"/>
   <option timestep="0.002" gravity="0 0 -9.81"/>
 

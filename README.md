@@ -1,6 +1,6 @@
-# ScaleTwin — setup
+# Bidex — setup
 
-Twin window + Port / SigNoz / Bright Data stubs. Factory is not built yet.
+Twin window + Port / SigNoz / Bright Data stubs. Demo loop is not built yet.
 
 ```bash
 cd /Users/nikhi/zero-downtime-hackathon

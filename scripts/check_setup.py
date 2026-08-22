@@ -53,7 +53,7 @@ def main() -> int:
             rows.append((name, "FAIL", str(exc)))
             failed = True
 
-    print("ScaleTwin setup")
+    print("Bidex setup")
     print(f"  tag cm: {settings.apriltag_size_cm or '(not set)'}")
     print(f"  keys: signoz={settings.signoz_ready} port={settings.port_ready} brightdata={settings.brightdata_ready}")
     print()

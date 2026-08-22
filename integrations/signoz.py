@@ -46,7 +46,7 @@ def tracer_ready() -> str:
 
 def get_tracer():
     _boot()
-    return trace.get_tracer("scaletwin")
+    return trace.get_tracer("bidex")
 
 
 @contextmanager

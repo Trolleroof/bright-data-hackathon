@@ -1,6 +1,6 @@
-**ScaleTwin**
+**Bidex**
 
-A generalizable software factory: one short table demo becomes new sim behavior in seconds, without pausing the twin.
+A generalizable live twin: one short table demo becomes new sim behavior in seconds, without pausing.
 
 ---
 
@@ -24,7 +24,7 @@ Copy GEN-1.5’s *interface*, not its brain.
 
 You record ~8 seconds. The factory extracts **parameters** from the bag, fills a skill spec, tests on replay, and hot-swaps. The twin never stops.
 
-| GEN-1.5 | ScaleTwin |
+| GEN-1.5 | Bidex |
 |---|---|
 | One demo in model memory | One demo → param JSON |
 | Composes prompts A + B | Composes primitives `goto` + `avoid` |
@@ -188,6 +188,6 @@ Tag must stay in frame. Do not move it after taping.
 ## Pitch (say this)
 
 > GEN-1.5 generalizes by pretraining.  
-> ScaleTwin generalizes by **composable primitives**: show once, extract params, scrape size from the web, ship without downtime.  
+> Bidex generalizes by **composable primitives**: show once, extract params, scrape size from the web, ship without downtime.  
 > Same engine for any catalog object. More skills = longer compose chain, not new code.  
 > Port shows the run. SigNoz shows the proof.

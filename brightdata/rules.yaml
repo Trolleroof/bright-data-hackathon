@@ -1,4 +1,4 @@
-# Bright Data Scraper Studio settings for ScaleTwin.
+# Bright Data Scraper Studio settings for Bidex.
 # The camera does not classify objects. This file aims the scraper.
 
 collector_id_env: BRIGHTDATA_COLLECTOR_ID

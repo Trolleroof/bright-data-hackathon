@@ -40,7 +40,7 @@ def load_settings() -> Settings:
     return Settings(
         signoz_endpoint=os.getenv("SIGNOZ_ENDPOINT", "").strip(),
         signoz_ingestion_key=os.getenv("SIGNOZ_INGESTION_KEY", "").strip(),
-        otel_service_name=os.getenv("OTEL_SERVICE_NAME", "scaletwin").strip() or "scaletwin",
+        otel_service_name=os.getenv("OTEL_SERVICE_NAME", "bidex").strip() or "bidex",
         port_client_id=os.getenv("PORT_CLIENT_ID", "").strip(),
         port_client_secret=os.getenv("PORT_CLIENT_SECRET", "").strip(),
         port_api_url=os.getenv("PORT_API_URL", "https://api.port.io/v1").strip(),
