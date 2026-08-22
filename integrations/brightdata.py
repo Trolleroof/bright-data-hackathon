@@ -88,7 +88,7 @@ def search(query: str, settings: Settings, limit: int = 5) -> list[str]:
         )
 
     urls: list[str] = []
-    for key in ("organic", "shopping", "results"):
+    for key in ("shopping", "organic", "results"):
         for item in payload.get(key, []) or []:
             link = item.get("link") or item.get("url")
             if link and link not in urls:
@@ -150,8 +150,8 @@ def _material(html_text: str, rules: dict) -> str | None:
     return None
 
 
-def extract(html: str, rules: dict) -> dict[str, Any]:
-    """Pull {name, height_cm, width_cm, weight_g, material} from a page.
+def _extract_page(html: str, rules: dict) -> tuple[dict[str, Any], bool]:
+    """Pull fields and the Product-schema signal from a page.
 
     Tries schema.org Product JSON-LD first (structured, when present), then
     falls back to text heuristics. No CSS selectors — a page redesign can't
@@ -159,6 +159,7 @@ def extract(html: str, rules: dict) -> dict[str, Any]:
     """
     soup = BeautifulSoup(html, "html.parser")
     fields: dict[str, Any] = {}
+    has_product_schema = False
 
     for script in soup.find_all("script", type="application/ld+json"):
         try:
@@ -166,8 +167,16 @@ def extract(html: str, rules: dict) -> dict[str, Any]:
         except (json.JSONDecodeError, TypeError):
             continue
         candidates = data if isinstance(data, list) else [data]
+        if isinstance(data, dict) and isinstance(data.get("@graph"), list):
+            candidates = data["@graph"]
         for candidate in candidates:
-            if isinstance(candidate, dict) and candidate.get("@type") == "Product":
+            if not isinstance(candidate, dict):
+                continue
+            types = candidate.get("@type", [])
+            if isinstance(types, str):
+                types = [types]
+            if "Product" in types:
+                has_product_schema = True
                 if candidate.get("name"):
                     fields.setdefault("name", candidate["name"])
                 weight = candidate.get("weight")
@@ -196,7 +205,12 @@ def extract(html: str, rules: dict) -> dict[str, Any]:
     if material:
         fields["material"] = material
 
-    return fields
+    return fields, has_product_schema
+
+
+def extract(html: str, rules: dict) -> dict[str, Any]:
+    """Pull {name, height_cm, width_cm, weight_g, material} from a page."""
+    return _extract_page(html, rules)[0]
 
 
 def lookup(label: str, settings: Settings | None = None) -> dict[str, Any]:
@@ -215,25 +229,33 @@ def lookup(label: str, settings: Settings | None = None) -> dict[str, Any]:
             query = settings.brightdata_catalog_url or rules["search_query_template"].format(label=label)
             urls = search(query, settings) if not settings.brightdata_catalog_url else [settings.brightdata_catalog_url]
             last_error: Exception | None = None
+            candidates: list[tuple[int, int, str, dict[str, Any], list[str]]] = []
             for url in urls or [rules["fallback_catalog_url"]]:
                 try:
                     html = fetch(url, settings)
-                    fields = extract(html, rules)
+                    fields, has_product_schema = _extract_page(html, rules)
                     missing_required = [f for f in rules["required_fields"] if not fields.get(f)]
-                    if missing_required:
-                        for field in missing_required:
-                            fields[field] = fixture.get(field)
-                    return {
-                        **fields,
-                        "source": "live",
-                        "url": url,
-                        "latency_ms": round((time.monotonic() - started) * 1000, 1),
-                        "backfilled_fields": missing_required,
-                    }
+                    # A page that carries some of the required fields still beats the
+                    # fixture: keep it and backfill the rest below.
+                    if len(missing_required) < len(rules["required_fields"]):
+                        candidates.append(
+                            (-len(missing_required), int(has_product_schema), url, fields, missing_required)
+                        )
                 except (requests.RequestException, BrightDataError) as exc:
                     last_error = exc
                     continue
-            raise last_error or BrightDataError("no candidate URL produced usable fields")
+            if candidates:
+                _, _, url, fields, missing_required = max(candidates, key=lambda c: c[:2])
+                backfilled = {field: fixture[field] for field in missing_required if field in fixture}
+                return {
+                    **backfilled,
+                    **fields,
+                    "source": "live",
+                    "url": url,
+                    "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                    "backfilled_fields": sorted(backfilled),
+                }
+            raise last_error or BrightDataError("no candidate URL produced any required product field")
         except (requests.RequestException, BrightDataError):
             pass  # falls through to the labeled fixture below
 
