@@ -42,7 +42,12 @@ Skills are **not** hardcoded moves and **not** new Python per run. They are para
 | Primitive | Input | What it does |
 |---|---|---|
 | `track_cube` | red blob x,y each frame | Keeps cube planted in MuJoCo |
-| `goto` | start + end from recording bag | Virtual arm path cube → target |
+| `replay_trajectory` | `[[x, y, t], ...]` from recording bag | Replays recorded push path (Run A primary) |
+| `goto` | start + end from recording bag | Simple push A → target (fallback) |
+| `approach` | `[x, y]` + `height_cm` | EE over cube before grasp |
+| `grasp` | — | Kinematic attach: cube follows end-effector |
+| `place` | `[x, y, z]` | Move attached cube to target pose |
+| `release` | — | Detach cube onto table |
 | `avoid` | not-red x,y + Bright Data `{name, width_cm, height_cm}` | Spawns geom, reroutes around it |
 | `compose` | ordered list of primitives | Chains A, then B, then C… |
 
@@ -52,8 +57,22 @@ Skills are **not** hardcoded moves and **not** new Python per run. They are para
 {
   "version": 2,
   "steps": [
-    { "op": "goto", "from": [0, 0], "to": [0.28, 0.18] },
+    { "op": "replay_trajectory", "path": [[0, 0, 0], [0.28, 0.18, 2.0]] },
     { "op": "avoid", "at": [-0.12, 0.05], "catalog_url": "…", "geom": "cylinder" }
+  ]
+}
+```
+
+**Pick-and-place (Run C or alternate demo):**
+
+```json
+{
+  "version": 2,
+  "steps": [
+    { "op": "approach", "at": [0, 0], "height_cm": 8 },
+    { "op": "grasp" },
+    { "op": "place", "at": [0.28, 0.18, 0] },
+    { "op": "release" }
   ]
 }
 ```
@@ -66,7 +85,7 @@ Adding skill C = append one step to this JSON. Same engine. That is generalizabl
 
 | Path | When | Time | What runs |
 |---|---|---|---|
-| **Fast** | Recording matches a known primitive (`goto`, `avoid`, `compose`) | ~15–30 s | Extract waypoints → scrape if new blob → patch spec → replay → ship |
+| **Fast** | Recording matches a known primitive (`replay_trajectory`, `goto`, pick-and-place chain, `avoid`, `compose`) | ~15–30 s | Extract waypoints → scrape if new blob → patch spec → replay → ship |
 | **Slow** | Weird motion or extraction fails | ~2–4 min | Planner + implementer agents edit templates or selectors, then same replay gate |
 
 Demo default: **fast path**. Slow path is backup + scraper-repair beat.
@@ -85,7 +104,7 @@ The camera does **not** recognize “bottle.”
 | Red blob | Color | Cube position |
 | Not-red blob | Color | New object at x,y |
 | Name + size | Bright Data scrape | Geom dimensions in sim |
-| What to do | Primitive rules | `goto` from motion, `avoid` for any new blob |
+| What to do | Primitive rules | `replay_trajectory` / `goto` from motion, pick-and-place from grasp segment, `avoid` for any new blob |
 
 **Demo contract:** water bottle on the table for run B. Scraper aimed at one catalog URL in `brightdata/rules.yaml`. Position from camera. Centimeters from the web.
 
@@ -131,8 +150,11 @@ Tests the spec against the recording, not your live hand. Pass → Approve. Play
 3. Approve. Show scraper break + repair once (slow path or forced selector break).
 4. Arm: target **and** around bottle. Replay works a second time.
 
-**Optional run C+**  
-Same loop. New primitive step or new obstacle. Still one engine, longer `compose` chain. Keep demo to 2–3 runs max for judges.
+**Optional run C — pick-and-place**  
+Record: approach cube, lift, set on target. Fast path fills `approach` → `grasp` → `place` → `release`. Same Approve + hot-swap loop.
+
+**Optional run D+**  
+Same loop. New primitive step or new obstacle. Still one engine, longer `compose` chain. Keep demo to 2–3 runs max for judges unless pick-and-place replaces Run A.
 
 Backup if alert dies: start the same request in Port by hand.
 
@@ -179,7 +201,7 @@ Tag must stay in frame. Do not move it after taping.
 - Ending a recording opens Port with no typed ticket
 - Bottle size from Bright Data JSON; auto-repair shown once
 - Replay gates Approve; camera-move during ship proves zero downtime
-- `compose(goto, avoid)` works; replay succeeds twice
+- `compose(replay, avoid)` works; pick-and-place chain works; replay succeeds twice
 - SigNoz alone explains both runs
 - Adding run C is “append a step,” not a rewrite
 
