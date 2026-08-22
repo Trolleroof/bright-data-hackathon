@@ -21,7 +21,7 @@ def check_twin() -> str:
     scene = ROOT / "twin" / "scene.xml"
     model = mujoco.MjModel.from_xml_path(str(scene))
     mujoco.MjData(model)
-    names = {"cube", "apriltag", "target", "ee"}
+    names = {"base", "cube", "apriltag", "target"}
     found = {
         name
         for name in names

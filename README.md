@@ -31,6 +31,29 @@ tuning (`CAMERA_INDEX`, `CAMERA_FOV_DEG`, `CUBE_TRACK_HEIGHT_CM`) is in
 
 Missing sponsor keys = that row says skipped. The sim still opens.
 
+## First-pass skill replay
+
+`outputs/skill_spec.json` is the hot-swappable, version-2 recipe. It supports
+`replay_trajectory`, `goto`, and the kinematic `approach` → `grasp`
+→ `place` → `release` chain. Validate it without a camera or viewer:
+
+```bash
+python scripts/run_skill.py
+```
+
+Trajectory times are seconds and must start at zero. A `goto` uses `start`,
+`end`, and optional `duration_s` (one second by default). The runner watches
+the file and applies a changed spec at a step boundary.
+
+Open the simulated pick-and-place run with:
+
+```bash
+python -m twin.sim --skill
+```
+
+The blue cursor is the skill engine's table-frame end-effector target. This is
+kinematic cube motion; the parked visual arm does not yet have an IK solver.
+
 Fill `.env` when you have them:
 
 | Key | Where |

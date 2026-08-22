@@ -20,6 +20,8 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
+from engine.runner import Runner, Setpoint
+from engine.spec import SpecError, load
 from integrations.config import load_settings
 from integrations.signoz import span, tracer_ready
 
@@ -63,18 +65,53 @@ class CubeAnchor:
         return float(xy[0]), float(xy[1])
 
 
+class SkillDriver:
+    """Applies table-frame skill setpoints without claiming to solve arm IK."""
+
+    def __init__(self, model: mujoco.MjModel) -> None:
+        joint = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")
+        self._cube_qpos = int(model.jnt_qposadr[joint])
+        self._cube_dof = int(model.jnt_dofadr[joint])
+        self._cursor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "skill_ee")
+
+    def _cube(self, data: mujoco.MjData, x: float, y: float, z: float) -> None:
+        a = self._cube_qpos
+        data.qpos[a : a + 3] = (x, y, TABLE_TOP_Z + z + CUBE_HALF)
+        data.qpos[a + 3 : a + 7] = (1.0, 0.0, 0.0, 0.0)
+        data.qvel[self._cube_dof : self._cube_dof + 6] = 0.0
+
+    def apply(self, model: mujoco.MjModel, data: mujoco.MjData, setpoint: Setpoint) -> None:
+        model.site_pos[self._cursor] = (setpoint.x, setpoint.y, TABLE_TOP_Z + setpoint.z)
+        if setpoint.attached or setpoint.op in {"replay_trajectory", "goto"}:
+            self._cube(data, setpoint.x, setpoint.y, setpoint.z)
+        mujoco.mj_forward(model, data)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--camera", action="store_true", help="run track_cube from the webcam")
     parser.add_argument("--no-hud", action="store_true", help="camera mode without the HUD window")
+    parser.add_argument("--skill", action="store_true", help="run outputs/skill_spec.json in the twin")
+    parser.add_argument("--spec", type=Path, default=ROOT / "outputs" / "skill_spec.json")
     args = parser.parse_args()
+    if args.camera and args.skill:
+        parser.error("--camera and --skill both control the cube; run one at a time")
 
     settings = load_settings()
     model = mujoco.MjModel.from_xml_path(str(SCENE))
     data = mujoco.MjData(model)
 
     # Parked pose: arm reaches slightly over the table, not a skill.
-    data.ctrl[:] = [0.35, -0.6, 0.0]
+    data.ctrl[:] = 0.0
+
+    runner = None
+    driver = None
+    if args.skill:
+        try:
+            runner = Runner(load(args.spec), args.spec)
+        except SpecError as exc:
+            parser.error(f"skill spec rejected: {exc}")
+        driver = SkillDriver(model)
 
     tracker = None
     camera = None
@@ -93,7 +130,7 @@ def main() -> None:
         tracker.start()
 
     tag_cm = settings.apriltag_size_cm or "?"
-    mode = "track_cube" if args.camera else "sim only"
+    mode = "track_cube" if args.camera else "skill engine" if args.skill else "sim only"
     print(f"twin running  |  prompt=IDLE  |  {mode}  |  close the window to quit")
     print(f"tag size in .env: {tag_cm} cm  |  SigNoz tracer: {tracer_ready()}")
 
@@ -109,6 +146,16 @@ def main() -> None:
                 result = tracker.latest if tracker is not None else None
                 if result is not None and result.cube_xy is not None and anchor is not None:
                     anchor.apply(data, result.cube_xy)
+                if runner is not None and driver is not None:
+                    if not runner.finished:
+                        setpoint = runner.tick(data.time)
+                        if setpoint is not None:
+                            driver.apply(model, data, setpoint)
+                    try:
+                        if runner.reload_if_changed():
+                            print("skill spec reloaded")
+                    except SpecError as exc:
+                        print(f"skill spec rejected; keeping current skill: {exc}")
 
                 mujoco.mj_step(model, data)
                 viewer.sync()
