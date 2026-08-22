@@ -269,6 +269,16 @@ export const LiveOps: React.FC<LiveOpsProps> = ({ live, onToast, onRefresh }) =>
               tone={twin.hot_swaps > 0 ? 'good' : 'default'}
             />
             <Readout
+              label="obstacle geom"
+              value={twin.mesh_label}
+              tone={twin.mesh_rung < 3 ? 'good' : 'warn'}
+            />
+            <Readout
+              label="mesh swaps"
+              value={`${twin.mesh_swaps}${twin.mesh_source ? ` · ${twin.mesh_source}` : ''}`}
+              tone={twin.mesh_swaps > 0 ? 'good' : 'default'}
+            />
+            <Readout
               label="ee cursor"
               value={
                 twin.ee_xyz

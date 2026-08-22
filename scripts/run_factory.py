@@ -20,6 +20,7 @@ def main() -> int:
     parser.add_argument("--append", action="store_true", help="append avoid step to existing spec")
     parser.add_argument("--smoke", action="store_true", help="run synthetic bag offline")
     parser.add_argument("--label", type=str, default="", help="Bright Data search label override")
+    parser.add_argument("--no-mesh", action="store_true", help="skip the mesh ladder, keep the primitive")
     args = parser.parse_args()
 
     if args.smoke:
@@ -32,6 +33,7 @@ def main() -> int:
             args.spec,
             scrape_label=args.label or None,
             append=args.append,
+            mesh=not args.no_mesh,
         )
 
     print(f"bag:     {result.bag_path}")
@@ -40,6 +42,10 @@ def main() -> int:
     print(f"steps:   {result.replay.steps_completed} completed")
     print(f"replay:  {result.replay.detail} (max_error_cm={result.replay.max_error_cm})")
     print(f"elapsed: {result.elapsed_ms} ms")
+    if result.mesh:
+        print(f"geom:    {result.mesh.label}")
+        for reason in result.mesh.reasons:
+            print(f"         {reason}")
     if result.catalog:
         print(
             f"scrape:  source={result.catalog.get('source')} "

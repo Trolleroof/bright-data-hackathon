@@ -80,8 +80,17 @@ def _validate_step(step: Any, index: int) -> dict[str, Any]:
         return {"op": op}
     if op == "avoid":
         geom = step.get("geom", "cylinder")
-        if geom not in {"cylinder", "box"}:
-            raise SpecError(f"steps[{index}].geom must be cylinder or box")
+        if geom not in {"cylinder", "box", "mesh"}:
+            raise SpecError(f"steps[{index}].geom must be cylinder, box, or mesh")
+        # Which rung of the geometry ladder produced this obstacle: 1 the
+        # product's own AR mesh, 2 a mesh from the wider 3D web, 3 the
+        # primitive. The mesh itself lives in outputs/mesh_asset.json, not
+        # here — a spec stays a small, reviewable JSON document.
+        mesh_rung = step.get("mesh_rung", 3)
+        if mesh_rung not in {1, 2, 3}:
+            raise SpecError(f"steps[{index}].mesh_rung must be 1, 2, or 3")
+        if geom == "mesh" and mesh_rung == 3:
+            raise SpecError(f"steps[{index}].geom mesh cannot claim the primitive rung")
         width_cm, height_cm = step.get("width_cm"), step.get("height_cm")
         if not isinstance(width_cm, (int, float)) or width_cm <= 0 or not isinstance(height_cm, (int, float)) or height_cm <= 0:
             raise SpecError(f"steps[{index}].width_cm and height_cm must be positive")
@@ -97,6 +106,8 @@ def _validate_step(step: Any, index: int) -> dict[str, Any]:
             "width_m": float(width_cm) / 100,
             "height_m": float(height_cm) / 100,
             "material": material if material in MATERIALS else "plastic",
+            "mesh_rung": int(mesh_rung),
+            "mesh_source": str(step.get("mesh_source", "")),
             "density_kg_m3": float(step.get("density_kg_m3", physics["density_kg_m3"])),
             "friction": float(step.get("friction", physics["friction"])),
             "mass_kg": float(weight_g) / 1000 if weight_g is not None else None,

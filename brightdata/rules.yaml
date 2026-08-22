@@ -33,3 +33,31 @@ material_density_kg_m3:
   cardboard: 700
   rubber: 1200
   wood: 600
+
+# --- 3D geometry (issue #19) -------------------------------------------------
+# The camera measures size but cannot see shape; the scrape reads size and mass
+# but cannot draw. This block tells the mesh ladder where to look for shape.
+# Rung 1 is the product's own AR model (the exact object), rung 2 is the wider
+# 3D-asset web, rung 3 is the primitive cylinder we already ship.
+mesh:
+  # Hard caps so a stray 400 MB scan cannot stall the demo.
+  max_bytes: 33554432
+  max_pages_per_source: 2
+  collision_faces: 400
+  extensions: [".stl", ".glb", ".gltf", ".obj", ".ply", ".usdz"]
+
+  # Rung 2. One SERP query per source: discovery across many sources at once is
+  # the point — a single curated dataset would not need search at all.
+  sources:
+    - name: thingiverse
+      query: "site:thingiverse.com {label} stl"
+      host: thingiverse.com
+    - name: printables
+      query: "site:printables.com {label} stl download"
+      host: printables.com
+    - name: sketchfab
+      query: "site:sketchfab.com {label} 3d model download"
+      host: sketchfab.com
+    - name: open_web
+      query: "{label} 3d model stl free download"
+      host: ""

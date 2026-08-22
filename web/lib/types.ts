@@ -78,6 +78,12 @@ export interface TwinState {
   skill_finished: boolean;
   spec_version: number | null;
   hot_swaps: number;
+  /* Which rung of the geometry ladder the obstacle came from: 1 the product's
+     own AR mesh, 2 a mesh found on the wider 3D web, 3 the primitive cylinder. */
+  mesh_rung: number;
+  mesh_label: string;
+  mesh_source: string | null;
+  mesh_swaps: number;
   render_fps: number;
   frames: number;
   views: string[];

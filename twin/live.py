@@ -24,8 +24,10 @@ import mujoco
 
 from engine.runner import Runner
 from engine.spec import SpecError, load
+from factory.mesh_fit import ASSET_PATH, load_asset
 from integrations.tracing import record_event, span
 from twin.sim import CubeAnchor, SkillDriver, _cube_xy
+from twin.world import resolve_scene, rung_label
 from vision.live import CAMERA
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -68,6 +70,10 @@ class TwinState:
     skill_finished: bool = False
     spec_version: int | None = None
     hot_swaps: int = 0
+    mesh_rung: int = 3
+    mesh_label: str = "rung 3: primitive cylinder"
+    mesh_source: str | None = None
+    mesh_swaps: int = 0
     render_fps: float = 0.0
     frames: int = 0
 
@@ -143,16 +149,38 @@ class LiveTwin:
         self._reset_requested.set()
         return self.state()
 
+    # --- world -----------------------------------------------------------
+    def _build_world(self, asset: dict[str, Any] | None):
+        """Compile the scene for the current geometry rung.
+
+        MuJoCo compiles meshes into the model, so a new mesh means a new model.
+        Everything the loop holds is rebuilt around it.
+        """
+        scene, effective = resolve_scene(asset)
+        model = mujoco.MjModel.from_xml_path(str(scene))
+        data = mujoco.MjData(model)
+        renderer = mujoco.Renderer(model, self.height, self.width)
+        # `effective` is None when the rewrite fell back to the primitive, so
+        # the HUD label always matches the model MuJoCo actually compiled.
+        return model, data, CubeAnchor(model), SkillDriver(model), renderer, effective
+
+    @staticmethod
+    def _asset_stamp() -> int:
+        try:
+            return ASSET_PATH.stat().st_mtime_ns
+        except OSError:
+            return 0
+
     # --- loop ------------------------------------------------------------
     def _loop(self) -> None:
         import cv2  # noqa: PLC0415 — encoding is only needed while streaming
 
+        mesh_asset = load_asset()
+        mesh_stamp = self._asset_stamp()
+        mesh_swaps = 0
+        next_mesh_check = 0.0
         try:
-            model = mujoco.MjModel.from_xml_path(str(SCENE))
-            data = mujoco.MjData(model)
-            anchor = CubeAnchor(model)
-            driver = SkillDriver(model)
-            renderer = mujoco.Renderer(model, self.height, self.width)
+            model, data, anchor, driver, renderer, mesh_asset = self._build_world(mesh_asset)
         except Exception as exc:  # noqa: BLE001 — a broken scene must not 500 the UI
             with self._lock:
                 self._state = TwinState(running=False, error=f"scene: {exc}")
@@ -171,6 +199,46 @@ class LiveTwin:
         try:
             while not self._stop.is_set():
                 step_start = time.time()
+
+                # The mesh ladder writes outputs/mesh_asset.json when it finds
+                # real geometry. Swap it in without dropping the world: same
+                # joints, same qpos, new obstacle. The viewer never stops.
+                if step_start >= next_mesh_check:
+                    next_mesh_check = step_start + 1.0
+                    stamp = self._asset_stamp()
+                    if stamp != mesh_stamp:
+                        mesh_stamp = stamp
+                        candidate = load_asset()
+                        try:
+                            new_world = self._build_world(candidate)
+                        except Exception as exc:  # noqa: BLE001 — keep the old world
+                            with self._lock:
+                                self._state.error = f"mesh swap rejected: {exc}"
+                        else:
+                            qpos, qvel, sim_time = data.qpos.copy(), data.qvel.copy(), data.time
+                            renderer.close()
+                            model, data, anchor, driver, renderer, candidate = new_world
+                            if qpos.shape == data.qpos.shape:
+                                data.qpos[:] = qpos
+                                data.qvel[:] = qvel
+                                data.time = sim_time
+                            mujoco.mj_forward(model, data)
+                            mesh_asset = candidate
+                            with self._lock:
+                                # A later good swap clears an earlier rejection;
+                                # otherwise the banner sticks for the whole run.
+                                if str(self._state.error or "").startswith("mesh swap rejected"):
+                                    self._state.error = None
+                            mesh_swaps += 1
+                            with span("mesh_swap", rung=(candidate or {}).get("rung", 3)):
+                                record_event(
+                                    "release",
+                                    hot_swap=True,
+                                    zero_downtime=True,
+                                    source="live_twin_mesh_swap",
+                                    geometry=rung_label(mesh_asset),
+                                    status="ZERO_DOWNTIME",
+                                )
 
                 if self._reset_requested.is_set():
                     self._reset_requested.clear()
@@ -244,6 +312,10 @@ class LiveTwin:
                             skill_finished=bool(runner.finished) if runner else False,
                             spec_version=getattr(runner.spec, "version", 2) if runner else None,
                             hot_swaps=hot_swaps,
+                            mesh_rung=int(mesh_asset["rung"]) if mesh_asset else 3,
+                            mesh_label=rung_label(mesh_asset),
+                            mesh_source=mesh_asset.get("source") if mesh_asset else None,
+                            mesh_swaps=mesh_swaps,
                             render_fps=render_fps,
                             frames=frames,
                         )
