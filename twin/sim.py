@@ -4,7 +4,7 @@ Default: sim only. With --camera, track_cube runs: the AprilTag anchors the
 table, the red blob is the cube, and the cube stays planted while you walk the
 camera around. Keys in this terminal (not the MuJoCo window):
 
-  R  start/stop recording (~3–12 s push) → fast-path factory on stop
+  R  start/stop recording (~3–12 s pick-and-place) → fast-path factory on stop
   F  append avoid step from last bag (Run B)
   S  approve + run the skill spec in sim
 """

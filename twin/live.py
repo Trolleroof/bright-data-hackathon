@@ -42,15 +42,14 @@ VIEWS: dict[str, dict[str, float]] = {
 }
 LOOKAT = (0.0, 0.05, 0.80)
 
-# Run A from plan.md: push the cube to the taped target square. Written to
-# outputs/skill_spec.json the first time the skill view runs on a fresh clone.
+# Run A default: pick at the cube start, place on the taped target square.
 SEED_SPEC = {
     "version": 2,
     "steps": [
-        {
-            "op": "replay_trajectory",
-            "path": [[0.0, 0.0, 0.0], [0.14, 0.09, 1.2], [0.28, 0.18, 2.4]],
-        }
+        {"op": "approach", "at": [0.0, 0.0], "height_cm": 8, "duration_s": 0.8},
+        {"op": "grasp"},
+        {"op": "place", "at": [0.28, 0.18, 0], "duration_s": 1.2},
+        {"op": "release"},
     ],
 }
 
@@ -251,7 +250,7 @@ class LiveTwin:
                 if source == "camera":
                     tracker = CAMERA.tracker
                     result = tracker.latest if tracker is not None else None
-                    if result is not None and result.cube_xy is not None:
+                    if result is not None and result.tag_seen and result.cube_xy is not None:
                         anchor.apply(data, result.cube_xy)
                 elif source == "skill" and runner is not None:
                     if not runner.finished:

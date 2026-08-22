@@ -1,4 +1,3 @@
-export type ViewMode = 'waterfall' | 'flame' | 'json';
 export type FilterType = 'all' | 'run_a' | 'run_b';
 
 export interface SpanEvent {
@@ -62,7 +61,6 @@ export interface BackendStatus {
 export type TwinSource = 'idle' | 'camera' | 'skill';
 export type TwinView = 'operator' | 'overhead' | 'front' | 'wide' | string;
 export type PromptState = 'IDLE' | 'RECORDING' | 'PROMPTED' | string;
-export type WorkspaceTab = 'live' | 'recorder';
 
 export interface TwinState {
   running: boolean;

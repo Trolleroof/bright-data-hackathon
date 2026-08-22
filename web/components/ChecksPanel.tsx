@@ -21,7 +21,7 @@ interface ChecksPanelProps {
 const POLL_MS = 500;
 
 export const ChecksPanel: React.FC<ChecksPanelProps> = ({ onToast }) => {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [checks, setChecks] = useState<CheckDefinition[]>([]);
   const [suite, setSuite] = useState<string[]>([]);
   const [job, setJob] = useState<CheckJob | null>(null);

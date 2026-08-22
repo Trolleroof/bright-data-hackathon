@@ -33,7 +33,7 @@ With `--camera`, keys go in **this terminal** (not the MuJoCo window):
 
 | Key | Action |
 |---|---|
-| `R` | Start/stop recording (~3–12 s push) → fast-path factory on stop |
+| `R` | Start/stop recording (~3–12 s pick-and-place) → fast-path factory on stop |
 | `F` | Append avoid step from last bag (Run B) |
 | `S` | Run the skill spec in sim (after factory PASS) |
 
