@@ -42,7 +42,7 @@
 
     <site name="tag_origin" pos="-0.32 0.22 0.761" size="0.012" rgba="0.1 0.95 0.3 1"/>
     <geom name="apriltag" type="box" pos="-0.32 0.22 0.761" size="0.075 0.075 0.001" material="tag"/>
-    <geom name="target" type="box" pos="0.28 0.18 0.761" size="0.06 0.06 0.001" material="target"/>
+    <geom name="target" type="box" pos="0.12 0.08 0.761" size="0.045 0.045 0.001" material="target"/>
 
     <body name="cube" pos="0 0 0.795">
       <freejoint name="cube_free"/>

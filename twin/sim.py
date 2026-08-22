@@ -73,13 +73,21 @@ class CubeAnchor:
 
 
 class SkillDriver:
-    """Applies table-frame skill setpoints without claiming to solve arm IK."""
+    """Drive the real SO-101 gripper to each table-frame skill setpoint."""
 
     def __init__(self, model: mujoco.MjModel) -> None:
         joint = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")
         self._cube_qpos = int(model.jnt_qposadr[joint])
         self._cube_dof = int(model.jnt_dofadr[joint])
         self._cursor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "skill_ee")
+        self._ee = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe")
+        self._arm_joints = [
+            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            for name in ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")
+        ]
+        self._arm_qpos = [int(model.jnt_qposadr[joint]) for joint in self._arm_joints]
+        self._arm_dof = [int(model.jnt_dofadr[joint]) for joint in self._arm_joints]
+        self._gripper = mujoco.mj_name2id(model, mujoco.mjtObj.mjACTUATOR, "gripper")
         self._obstacle_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
         self._obstacle_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "obstacle_geom")
         self._obstacle_qpos = int(
@@ -112,7 +120,26 @@ class SkillDriver:
         data.qvel[self._cube_dof : self._cube_dof + 6] = 0.0
 
     def apply(self, model: mujoco.MjModel, data: mujoco.MjData, setpoint: Setpoint) -> None:
-        model.site_pos[self._cursor] = (setpoint.x, setpoint.y, TABLE_TOP_Z + setpoint.z)
+        target = np.array((setpoint.x, setpoint.y, TABLE_TOP_Z + setpoint.z + CUBE_HALF))
+        model.site_pos[self._cursor] = target
+        mujoco.mj_forward(model, data)
+        jac = np.zeros((3, model.nv))
+        for _ in range(8):
+            mujoco.mj_jacSite(model, data, jac, None, self._ee)
+            error = target - data.site_xpos[self._ee]
+            if np.linalg.norm(error) < 1e-4:
+                break
+            arm_jac = jac[:, self._arm_dof]
+            delta = arm_jac.T @ np.linalg.solve(
+                arm_jac @ arm_jac.T + 1e-5 * np.eye(3), error * 0.8
+            )
+            for qpos, step, joint in zip(self._arm_qpos, np.clip(delta, -0.08, 0.08), self._arm_joints):
+                data.qpos[qpos] = np.clip(
+                    data.qpos[qpos] + step, model.jnt_range[joint, 0], model.jnt_range[joint, 1]
+                )
+            mujoco.mj_forward(model, data)
+        data.ctrl[:5] = data.qpos[self._arm_qpos]
+        data.ctrl[self._gripper] = 0.0 if setpoint.attached else 0.35
         self._obstacle(model, data, setpoint.obstacle)
         if setpoint.attached or setpoint.op in {"replay_trajectory", "goto"}:
             self._cube(data, setpoint.x, setpoint.y, setpoint.z)

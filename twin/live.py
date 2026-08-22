@@ -47,8 +47,9 @@ SEED_SPEC = {
     "version": 2,
     "steps": [
         {"op": "approach", "at": [0.0, 0.0], "height_cm": 8, "duration_s": 0.8},
+        {"op": "approach", "at": [0.0, 0.0], "height_cm": 2.5, "duration_s": 0.5},
         {"op": "grasp"},
-        {"op": "place", "at": [0.28, 0.18, 0], "duration_s": 1.2},
+        {"op": "place", "at": [0.12, 0.08, 0], "duration_s": 1.2},
         {"op": "release"},
     ],
 }
