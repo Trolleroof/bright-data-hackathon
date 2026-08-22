@@ -15,6 +15,7 @@ import numpy as np
 
 from vision.camera import Camera
 from vision.cube import Blob, find_red_blob
+from vision.solve import fit_cube
 from vision.tag import TagDetector, TagPose
 
 
@@ -25,6 +26,7 @@ class TrackResult:
     blob: Blob | None = None
     cube_xy: tuple[float, float] | None = None  # metres, table frame, smoothed
     raw_xy: tuple[float, float] | None = None
+    surface: str = "?"  # which cube surface explained the blob: silhouette / top
     latency_ms: float = 0.0
     fps: float = 0.0
 
@@ -61,12 +63,14 @@ class CubeTracker:
         self,
         camera: Camera,
         tag_size_m: float,
+        cube_size_m: float = 0.05,
         plane_z_m: float = 0.025,
         smoothing: float = 0.35,
         max_jump_m: float = 0.30,
     ) -> None:
         self.camera = camera
         self.detector = TagDetector(tag_size_m)
+        self.cube_size_m = cube_size_m
         self.plane_z_m = plane_z_m
         self.smoothing = smoothing
         self.max_jump_m = max_jump_m
@@ -88,8 +92,9 @@ class CubeTracker:
         tag = self.detector.detect(frame, self.camera.intrinsics.matrix, self.camera.intrinsics.distortion)
         blob = find_red_blob(frame)
         raw_xy: tuple[float, float] | None = None
+        surface = "?"
         if tag is not None and blob is not None:
-            raw_xy = _pixel_to_plane(tag, blob.u, blob.v, self.camera.intrinsics.matrix, self.plane_z_m)
+            raw_xy, surface = self._blob_to_table(tag, blob)
 
         cube_xy = self._smooth(raw_xy)
 
@@ -103,10 +108,22 @@ class CubeTracker:
                 blob=blob,
                 cube_xy=cube_xy,
                 raw_xy=raw_xy,
+                surface=surface,
                 latency_ms=(now - started) * 1000.0,
                 fps=fps,
             )
         )
+
+    def _blob_to_table(self, tag: TagPose, blob: Blob) -> tuple[tuple[float, float] | None, str]:
+        """Blob → cube centre on the table, with the visible-surface bias removed."""
+        matrix = self.camera.intrinsics.matrix
+        seed = _pixel_to_plane(tag, blob.u, blob.v, matrix, self.plane_z_m)
+        if seed is None:
+            return None, "?"
+        fit = fit_cube(tag, (blob.u, blob.v), blob.area_px, matrix, self.cube_size_m, seed)
+        if fit is None:
+            return seed, "raw"  # solve failed: the plane hit beats nothing
+        return fit.xy, fit.surface
 
     def _smooth(self, raw_xy: tuple[float, float] | None) -> tuple[float, float] | None:
         if raw_xy is None:

@@ -26,6 +26,7 @@ class Settings:
     camera_width: int
     camera_height: int
     cube_track_height_cm: float
+    cube_size_cm: float
 
     @property
     def apriltag_size_m(self) -> float:
@@ -83,4 +84,5 @@ def load_settings() -> Settings:
         camera_width=_int("CAMERA_WIDTH", 1280),
         camera_height=_int("CAMERA_HEIGHT", 720),
         cube_track_height_cm=_float("CUBE_TRACK_HEIGHT_CM", 2.5),
+        cube_size_cm=_float("CUBE_SIZE_CM", 5.0),
     )

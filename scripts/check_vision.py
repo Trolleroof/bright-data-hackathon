@@ -1,8 +1,15 @@
 """Prove track_cube geometry without a camera.
 
 Renders a synthetic table: an AprilTag at the origin and a red cube at a known
-spot, seen from several camera poses. The recovered x,y must be the same from
-every pose — that is exactly "walk the camera, the cube stays planted".
+spot, seen from several camera poses. The recovered x,y must match the truth
+from every pose — that is exactly "walk the camera, the cube stays planted".
+
+Two lighting cases, because they fail differently:
+
+* `silhouette` — the whole cube reads red.
+* `top` — the sides are shadowed and only the top square passes the threshold.
+  This one is the drift you notice by eye: the blob floats a cube-height above
+  the table, so a naive back-projection slides with the camera angle.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ import numpy as np
 from vision.camera import Intrinsics
 from vision.cube import find_red_blob
 from vision.tag import TagDetector
+from vision.solve import fit_cube
 from vision.tracker import _pixel_to_plane
 
 WIDTH, HEIGHT = 1280, 720
@@ -27,7 +35,7 @@ TAG_SIZE_M = 0.15
 CUBE_HALF_M = 0.025
 CUBE_XY = (0.18, -0.12)  # truth, in the tag frame
 PLANE_Z = CUBE_HALF_M
-TOLERANCE_M = 0.025  # colour-blob centroid sits between the top and the visible side face
+TOLERANCE_M = 0.005
 
 # Camera poses: (eye, target) in the tag frame. Walking around the table.
 POSES = [
@@ -63,7 +71,7 @@ def _tag_image(size_px: int = 400) -> np.ndarray:
     return cv2.cvtColor(tag, cv2.COLOR_GRAY2BGR)
 
 
-def render(rotation, translation, matrix) -> np.ndarray:
+def render(rotation, translation, matrix, surface: str) -> np.ndarray:
     frame = np.full((HEIGHT, WIDTH, 3), 200, dtype=np.uint8)
 
     half = TAG_SIZE_M / 2.0
@@ -82,27 +90,21 @@ def render(rotation, translation, matrix) -> np.ndarray:
     cv2.fillConvexPoly(mask, dst.astype(int), 255)
     frame[mask > 0] = warped[mask > 0]
 
-    # Red cube: its top face, which is what a colour blob centroid lands on.
+    # Red cube: either its full outline, or just the top face when the sides are
+    # too dark to pass the colour threshold.
     cx, cy = CUBE_XY
-    top = np.array(
+    size = 2 * CUBE_HALF_M
+    heights = (size,) if surface == "top" else (0.0, size)
+    corners = np.array(
         [
-            [cx - CUBE_HALF_M, cy - CUBE_HALF_M, 2 * CUBE_HALF_M],
-            [cx + CUBE_HALF_M, cy - CUBE_HALF_M, 2 * CUBE_HALF_M],
-            [cx + CUBE_HALF_M, cy + CUBE_HALF_M, 2 * CUBE_HALF_M],
-            [cx - CUBE_HALF_M, cy + CUBE_HALF_M, 2 * CUBE_HALF_M],
+            [cx + sx * CUBE_HALF_M, cy + sy * CUBE_HALF_M, z]
+            for sx in (-1.0, 1.0)
+            for sy in (-1.0, 1.0)
+            for z in heights
         ]
     )
-    side = np.array(
-        [
-            [cx - CUBE_HALF_M, cy - CUBE_HALF_M, 0.0],
-            [cx + CUBE_HALF_M, cy - CUBE_HALF_M, 0.0],
-            [cx + CUBE_HALF_M, cy - CUBE_HALF_M, 2 * CUBE_HALF_M],
-            [cx - CUBE_HALF_M, cy - CUBE_HALF_M, 2 * CUBE_HALF_M],
-        ]
-    )
-    for face, color in ((side, (30, 30, 190)), (top, (40, 40, 220))):
-        pts = _project(face, rotation, translation, matrix).astype(int)
-        cv2.fillConvexPoly(frame, pts, color)
+    pts = _project(corners, rotation, translation, matrix).astype(np.float32)
+    cv2.fillConvexPoly(frame, cv2.convexHull(pts).astype(int), (35, 35, 205))
     return frame
 
 
@@ -112,32 +114,45 @@ def main() -> int:
     rows: list[tuple[str, str, str]] = []
     failed = False
 
-    for i, (eye, target) in enumerate(POSES):
+    for surface, (i, (eye, target)) in [
+        (s, p) for s in ("silhouette", "top") for p in enumerate(POSES)
+    ]:
         rotation, translation = _look_at(eye, target)
-        frame = render(rotation, translation, intrinsics.matrix)
+        frame = render(rotation, translation, intrinsics.matrix, surface)
+        label = f"{surface:10} pose {i}"
         tag = detector.detect(frame, intrinsics.matrix, intrinsics.distortion)
         if tag is None:
-            rows.append((f"pose {i}", "FAIL", "tag 0 not detected"))
+            rows.append((label, "FAIL", "tag 0 not detected"))
             failed = True
             continue
         blob = find_red_blob(frame)
         if blob is None:
-            rows.append((f"pose {i}", "FAIL", "red blob not found"))
+            rows.append((label, "FAIL", "red blob not found"))
             failed = True
             continue
-        xy = _pixel_to_plane(tag, blob.u, blob.v, intrinsics.matrix, PLANE_Z)
-        if xy is None:
-            rows.append((f"pose {i}", "FAIL", "ray missed the table plane"))
+        seed = _pixel_to_plane(tag, blob.u, blob.v, intrinsics.matrix, PLANE_Z)
+        if seed is None:
+            rows.append((label, "FAIL", "ray missed the table plane"))
             failed = True
             continue
+        fit = fit_cube(
+            tag, (blob.u, blob.v), blob.area_px, intrinsics.matrix, 2 * CUBE_HALF_M, seed
+        )
+        if fit is None:
+            rows.append((label, "FAIL", "surface solve did not converge"))
+            failed = True
+            continue
+        xy = fit.xy
         error = float(np.hypot(xy[0] - CUBE_XY[0], xy[1] - CUBE_XY[1]))
+        naive = float(np.hypot(seed[0] - CUBE_XY[0], seed[1] - CUBE_XY[1]))
         ok = error <= TOLERANCE_M
         failed = failed or not ok
         rows.append(
             (
-                f"pose {i}",
+                label,
                 "OK" if ok else "FAIL",
-                f"cube {xy[0]:+.3f} {xy[1]:+.3f}  err {error * 100:.1f} cm  from eye {eye}",
+                f"err {error * 100:.2f} cm  (raw centroid {naive * 100:.2f} cm)  "
+                f"read as {fit.surface}  from eye {eye}",
             )
         )
 

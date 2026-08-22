@@ -33,6 +33,7 @@ def draw(result: TrackResult) -> np.ndarray | None:
             else "cube: --",
             _WHITE if result.cube_xy else _RED,
         ),
+        (f"surface: {result.surface}", _WHITE),
         (f"latency: {result.latency_ms:5.1f} ms   fps: {result.fps:4.1f}", _WHITE),
     ]
     y = 28

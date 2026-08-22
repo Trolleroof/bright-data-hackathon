@@ -36,6 +36,7 @@ def build_tracker(camera: Camera | None = None) -> tuple[Camera, CubeTracker]:
     tracker = CubeTracker(
         camera=camera,
         tag_size_m=settings.apriltag_size_m,
+        cube_size_m=settings.cube_size_cm / 100.0,
         plane_z_m=settings.cube_track_height_cm / 100.0,
     )
     return camera, tracker
