@@ -2,6 +2,8 @@
   "name": "IKEA 365+ water bottle",
   "height_cm": 20.0,
   "width_cm": 7.0,
+  "weight_g": 120.0,
+  "material": "plastic",
   "source": "fixture",
   "catalog_url": "https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/"
 }

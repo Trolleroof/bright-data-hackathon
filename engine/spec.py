@@ -17,6 +17,17 @@ class SkillSpec:
     steps: tuple[dict[str, Any], ...]
 
 
+MATERIALS = {
+    "stainless": {"density_kg_m3": 8000.0, "friction": 0.55},
+    "steel": {"density_kg_m3": 7850.0, "friction": 0.55},
+    "glass": {"density_kg_m3": 2500.0, "friction": 0.45},
+    "plastic": {"density_kg_m3": 950.0, "friction": 0.35},
+    "aluminium": {"density_kg_m3": 2700.0, "friction": 0.45},
+    "cardboard": {"density_kg_m3": 700.0, "friction": 0.50},
+    "rubber": {"density_kg_m3": 1100.0, "friction": 0.90},
+}
+
+
 def _point(value: Any, name: str) -> tuple[float, float]:
     if not isinstance(value, list) or len(value) != 2 or not all(isinstance(n, (int, float)) for n in value):
         raise SpecError(f"{name} must be [x, y]")
@@ -74,7 +85,23 @@ def _validate_step(step: Any, index: int) -> dict[str, Any]:
         width_cm, height_cm = step.get("width_cm"), step.get("height_cm")
         if not isinstance(width_cm, (int, float)) or width_cm <= 0 or not isinstance(height_cm, (int, float)) or height_cm <= 0:
             raise SpecError(f"steps[{index}].width_cm and height_cm must be positive")
-        return {"op": op, "at": _point(step.get("at"), f"steps[{index}].at"), "geom": geom, "width_m": float(width_cm) / 100, "height_m": float(height_cm) / 100}
+        material = str(step.get("material", "plastic")).lower()
+        physics = MATERIALS.get(material, MATERIALS["plastic"])
+        weight_g = step.get("weight_g")
+        if weight_g is not None and (not isinstance(weight_g, (int, float)) or weight_g <= 0):
+            raise SpecError(f"steps[{index}].weight_g must be positive")
+        return {
+            "op": op,
+            "at": _point(step.get("at"), f"steps[{index}].at"),
+            "geom": geom,
+            "width_m": float(width_cm) / 100,
+            "height_m": float(height_cm) / 100,
+            "material": material if material in MATERIALS else "plastic",
+            "density_kg_m3": float(step.get("density_kg_m3", physics["density_kg_m3"])),
+            "friction": float(step.get("friction", physics["friction"])),
+            "mass_kg": float(weight_g) / 1000 if weight_g is not None else None,
+            "mass_defaulted": weight_g is None,
+        }
     raise SpecError(f"steps[{index}].op must be replay_trajectory or goto")
 
 

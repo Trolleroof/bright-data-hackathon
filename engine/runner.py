@@ -98,7 +98,7 @@ class Runner:
             start = end = self._position
             duration = 0.0
             progress = 1.0
-            obstacle = {key: step[key] for key in ("at", "geom", "width_m", "height_m")}
+            obstacle = {key: step[key] for key in ("at", "geom", "width_m", "height_m", "material", "density_kg_m3", "friction", "mass_kg", "mass_defaulted")}
         x = start[0] + (end[0] - start[0]) * progress
         y = start[1] + (end[1] - start[1]) * progress
         z = start[2] + (end[2] - start[2]) * progress

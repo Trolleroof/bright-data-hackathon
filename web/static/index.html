@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BIDEX // Flight Recorder &amp; Trace Timeline Viewer</title>
+
+  <!-- Avionics Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="hud-body">
+  <!-- Scanline & Ambient Background Grid Overlay -->
+  <div class="hud-grid-overlay" aria-hidden="true"></div>
+  <div class="hud-scanlines" aria-hidden="true"></div>
+
+  <!-- Main Container -->
+  <div class="hud-shell">
+
+    <!-- Top Telemetry Header -->
+    <header class="hud-header">
+      <div class="hud-brand">
+        <div class="hud-brand-badge">
+          <div class="radar-emitter">
+            <span class="radar-dot"></span>
+            <span class="radar-wave"></span>
+          </div>
+          <div class="brand-text">
+            <div class="brand-sub">AVIONICS BLACK BOX // TELEMETRY HUD</div>
+            <h1 class="brand-title">BIDEX <span class="brand-highlight">RECORDER</span></h1>
+          </div>
+        </div>
+
+        <div class="hud-chips-row">
+          <div class="telemetry-pill live-pill" id="sse-status-pill">
+            <span class="pill-dot"></span>
+            <span class="pill-text" id="sse-status-text">LIVE SSE STREAM</span>
+          </div>
+          <div class="telemetry-pill zero-downtime-pill" title="Twin runs continuously without sim pause">
+            <span class="pill-icon">⚡</span>
+            <span class="pill-text">ZERO DOWNTIME : <strong>ACTIVE</strong></span>
+          </div>
+          <div class="telemetry-pill signoz-pill" id="signoz-status-pill">
+            <span class="pill-icon">📡</span>
+            <span class="pill-text" id="signoz-status-text">SIGNOZ : LOCAL</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center Telemetry Counter Stats -->
+      <div class="hud-metrics">
+        <div class="metric-block">
+          <span class="metric-label">TOTAL TRACES</span>
+          <span class="metric-value" id="metric-traces-count">0</span>
+        </div>
+        <div class="metric-divider"></div>
+        <div class="metric-block">
+          <span class="metric-label">RAW SPANS</span>
+          <span class="metric-value" id="metric-spans-count">0</span>
+        </div>
+        <div class="metric-divider"></div>
+        <div class="metric-block">
+          <span class="metric-label">LATEST OP</span>
+          <span class="metric-value text-cyan" id="metric-latest-op">IDLE</span>
+        </div>
+      </div>
+
+      <!-- Action Control Buttons -->
+      <div class="hud-actions">
+        <button class="hud-btn btn-run-a" id="btn-run-a" title="Simulate Run A (goto) physical prompt trace (Key: A)">
+          <span class="btn-icon">▶</span>
+          <span class="btn-body">
+            <span class="btn-primary-text">RUN A</span>
+            <span class="btn-sub-text">goto</span>
+          </span>
+          <kbd class="btn-kbd">A</kbd>
+        </button>
+
+        <button class="hud-btn btn-run-b" id="btn-run-b" title="Simulate Run B (compose goto + avoid bottle) trace (Key: B)">
+          <span class="btn-icon">▶</span>
+          <span class="btn-body">
+            <span class="btn-primary-text">RUN B</span>
+            <span class="btn-sub-text">compose</span>
+          </span>
+          <kbd class="btn-kbd">B</kbd>
+        </button>
+
+        <div class="action-btn-group">
+          <button class="hud-btn hud-btn-icon" id="btn-refresh" title="Refresh trace data (Key: R)">
+            <span class="btn-icon">⟳</span>
+            <span class="btn-tooltip">Refresh</span>
+          </button>
+          <button class="hud-btn hud-btn-icon btn-danger" id="btn-clear" title="Clear recorded spans (Key: C)">
+            <span class="btn-icon">⌫</span>
+            <span class="btn-tooltip">Clear Spans</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace Split: Sidebar Runs + Timeline Stage -->
+    <main class="hud-workspace">
+
+      <!-- Left Sidebar: Captured Runs List -->
+      <aside class="hud-sidebar" id="hud-sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title-row">
+            <span class="sidebar-title">FLIGHT LOGS</span>
+            <span class="sidebar-count" id="sidebar-run-count">0 RUNS</span>
+          </div>
+          <div class="sidebar-filter-row">
+            <button class="filter-chip active" data-filter="all">ALL</button>
+            <button class="filter-chip" data-filter="run_a">RUN A</button>
+            <button class="filter-chip" data-filter="run_b">RUN B</button>
+          </div>
+        </div>
+
+        <div class="sidebar-runs-list" id="runs-list-container">
+          <!-- Dynamic Run Cards rendered here -->
+          <div class="sidebar-empty">
+            <div class="empty-radar"></div>
+            <div class="empty-title">NO TRACES LOGGED</div>
+            <div class="empty-sub">Trigger Run A or Run B to record telemetry</div>
+          </div>
+        </div>
+
+        <!-- Sidebar Footer Status -->
+        <div class="sidebar-footer">
+          <div class="footer-telemetry-row">
+            <span class="footer-dot blink"></span>
+            <span class="footer-msg" id="footer-sse-msg">SSE Connected (Port 8080)</span>
+          </div>
+          <span class="footer-time" id="footer-clock">--:--:--</span>
+        </div>
+      </aside>
+
+      <!-- Center Main: Trace Viewer Stage -->
+      <section class="hud-stage" id="hud-stage">
+
+        <!-- Active Trace Info Banner -->
+        <div class="trace-banner" id="trace-banner">
+          <div class="trace-banner-main">
+            <div class="trace-title-badge" id="trace-title-badge">
+              <span class="trace-mode-tag" id="banner-mode-tag">FAST PATH</span>
+              <h2 class="trace-heading" id="banner-trace-name">SELECT A TRACE RUN</h2>
+            </div>
+            <div class="trace-id-chip" id="trace-id-chip" title="Click to copy Trace ID">
+              <span class="chip-label">TRACE ID</span>
+              <span class="chip-val mono" id="banner-trace-id">--------------------------------</span>
+              <button class="copy-btn" id="btn-copy-trace-id" title="Copy ID">📋</button>
+            </div>
+          </div>
+
+          <div class="trace-banner-stats">
+            <div class="b-stat">
+              <span class="b-stat-lbl">DURATION</span>
+              <span class="b-stat-val text-cyan mono" id="banner-duration">0.00 ms</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-stat-lbl">SPANS</span>
+              <span class="b-stat-val mono" id="banner-span-count">0</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-stat-lbl">EVENTS</span>
+              <span class="b-stat-val text-amber mono" id="banner-event-count">0</span>
+            </div>
+            <div class="b-stat">
+              <span class="b-stat-lbl">SPEC STATUS</span>
+              <span class="b-stat-val text-green mono" id="banner-hot-swap">HOT-SWAPPED</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Key Milestones & Canonical Pipeline Legend -->
+        <div class="pipeline-legend">
+          <div class="legend-group">
+            <span class="legend-header">CANONICAL STAGES:</span>
+            <div class="stage-chips">
+              <span class="stage-chip chip-cam">1. detect</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-tag">2. tag_pose</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-twin">3. update_twin</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-param">4. extract_params</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-scrape">5. scrape</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-patch">6. patch_spec</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-test">7. test</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-appr">8. approve</span>
+              <span class="stage-chip-arrow">→</span>
+              <span class="stage-chip chip-exec">9. skill_exec</span>
+            </div>
+          </div>
+
+          <div class="view-mode-toggles">
+            <button class="view-mode-btn active" data-view="waterfall" id="view-waterfall-btn">
+              <span>☷ Waterfall</span>
+            </button>
+            <button class="view-mode-btn" data-view="flame" id="view-flame-btn">
+              <span>≡ Flame</span>
+            </button>
+            <button class="view-mode-btn" data-view="json" id="view-json-btn">
+              <span>{ } JSON</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Waterfall Timeline Container -->
+        <div class="waterfall-container" id="waterfall-container">
+
+          <!-- Waterfall Time Scale Ruler -->
+          <div class="waterfall-ruler-wrapper">
+            <div class="ruler-left-pad">
+              <span class="ruler-label">SPAN NAME &amp; PARAMS</span>
+            </div>
+            <div class="ruler-axis" id="timeline-ruler">
+              <!-- Ruler tick marks generated dynamically -->
+            </div>
+          </div>
+
+          <!-- Timeline Event Ribbon Markers (Prominent Vertical Milestones) -->
+          <div class="timeline-milestones-track" id="timeline-milestones-track">
+            <!-- Dynamic milestone markers injected here -->
+          </div>
+
+          <!-- Waterfall Span Rows Tree -->
+          <div class="waterfall-body" id="waterfall-body">
+            <!-- Dynamic span rows injected here -->
+            <div class="waterfall-empty-state" id="waterfall-empty-state">
+              <div class="empty-hud-display">
+                <div class="hud-target-reticle"></div>
+                <div class="empty-code">NO ACTIVE FLIGHT TRACE SELECTED</div>
+                <p class="empty-desc">Select a flight log from the left sidebar or launch a demo run above.</p>
+                <div class="empty-actions">
+                  <button class="empty-btn btn-a" onclick="document.getElementById('btn-run-a').click()">Launch Run A (goto)</button>
+                  <button class="empty-btn btn-b" onclick="document.getElementById('btn-run-b').click()">Launch Run B (compose)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Raw JSON View Container (Toggled via view buttons) -->
+          <div class="raw-json-container hidden" id="raw-json-container">
+            <pre class="json-code" id="raw-json-code"><code>// JSON trace representation</code></pre>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Right Slide-in Span Inspector Drawer -->
+      <aside class="span-inspector-drawer" id="span-inspector-drawer">
+        <div class="inspector-header">
+          <div class="inspector-title-row">
+            <div class="inspector-badge" id="insp-span-type-badge">SPAN</div>
+            <h3 class="inspector-name mono" id="insp-span-name">detect</h3>
+          </div>
+          <button class="inspector-close-btn" id="btn-close-inspector" title="Close Drawer (Esc)">✕</button>
+        </div>
+
+        <div class="inspector-content" id="inspector-content">
+
+          <!-- Timing Card -->
+          <div class="inspector-card">
+            <div class="card-title">TIMING TELEMETRY</div>
+            <div class="timing-visual-bar">
+              <div class="timing-fill" id="insp-timing-fill" style="width: 50%;"></div>
+            </div>
+            <div class="insp-stat-grid">
+              <div class="stat-cell">
+                <span class="cell-lbl">DURATION</span>
+                <span class="cell-val mono text-cyan" id="insp-duration">0.00 ms</span>
+              </div>
+              <div class="stat-cell">
+                <span class="cell-lbl">OFFSET FROM START</span>
+                <span class="cell-val mono" id="insp-offset">+0.00 ms</span>
+              </div>
+              <div class="stat-cell">
+                <span class="cell-lbl">% OF TRACE</span>
+                <span class="cell-val mono text-amber" id="insp-percent">0.0%</span>
+              </div>
+              <div class="stat-cell">
+                <span class="cell-lbl">STATUS</span>
+                <span class="cell-val mono text-green" id="insp-status">OK</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Identifiers Card -->
+          <div class="inspector-card">
+            <div class="card-title">OPEN TELEMETRY IDENTIFIERS</div>
+            <div class="id-row">
+              <span class="id-lbl">SPAN ID:</span>
+              <span class="id-val mono" id="insp-span-id">----------------</span>
+              <button class="id-copy" onclick="navigator.clipboard.writeText(document.getElementById('insp-span-id').innerText)" title="Copy">📋</button>
+            </div>
+            <div class="id-row">
+              <span class="id-lbl">PARENT ID:</span>
+              <span class="id-val mono" id="insp-parent-id">----------------</span>
+            </div>
+            <div class="id-row">
+              <span class="id-lbl">TRACE ID:</span>
+              <span class="id-val mono" id="insp-trace-id">----------------</span>
+              <button class="id-copy" onclick="navigator.clipboard.writeText(document.getElementById('insp-trace-id').innerText)" title="Copy">📋</button>
+            </div>
+          </div>
+
+          <!-- Sponsor Special Badge (Bright Data) -->
+          <div class="sponsor-highlight-card hidden" id="sponsor-card">
+            <div class="sponsor-header">
+              <span class="sponsor-badge">SPONSOR INTEGRATION</span>
+              <span class="sponsor-name">BRIGHT DATA WEB ENRICHMENT</span>
+            </div>
+            <div class="sponsor-body">
+              <p class="sponsor-desc">Physical table detected unknown object → web catalog queried for precise 3D MuJoCo bounding geometry.</p>
+              <div class="sponsor-tags" id="sponsor-tags-container">
+                <!-- Tags rendered here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Spec Patch Code Viewer (if patch_spec) -->
+          <div class="spec-json-card hidden" id="spec-json-card">
+            <div class="card-title">HOT-SWAPPED SKILL SPEC (JSON)</div>
+            <pre class="spec-code-pre"><code class="mono" id="insp-spec-code"></code></pre>
+          </div>
+
+          <!-- Span Attributes Table -->
+          <div class="inspector-card">
+            <div class="card-title">SPAN ATTRIBUTES (<span id="insp-attr-count">0</span>)</div>
+            <div class="attributes-table" id="insp-attributes-list">
+              <!-- Rendered key/value pairs -->
+            </div>
+          </div>
+
+          <!-- Span Events List -->
+          <div class="inspector-card">
+            <div class="card-title">RECORDED EVENTS (<span id="insp-event-count">0</span>)</div>
+            <div class="events-timeline-list" id="insp-events-list">
+              <!-- Rendered events -->
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+    </main>
+
+    <!-- Toast Notification Banner -->
+    <div class="hud-toast-container" id="toast-container"></div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

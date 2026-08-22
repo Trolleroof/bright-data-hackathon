@@ -23,7 +23,7 @@ import numpy as np
 from engine.runner import Runner, Setpoint
 from engine.spec import SpecError, load
 from integrations.config import load_settings
-from integrations.signoz import span, tracer_ready
+from integrations.signoz import record_event, span, tracer_ready
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
@@ -73,6 +73,22 @@ class SkillDriver:
         self._cube_qpos = int(model.jnt_qposadr[joint])
         self._cube_dof = int(model.jnt_dofadr[joint])
         self._cursor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "skill_ee")
+        self._obstacle_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
+        self._obstacle_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "obstacle_geom")
+        self._obstacle_qpos = int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "obstacle_free")])
+
+    def _obstacle(self, model: mujoco.MjModel, data: mujoco.MjData, obstacle: dict[str, object] | None) -> None:
+        if obstacle is None:
+            return
+        x, y = obstacle["at"]
+        q = self._obstacle_qpos
+        data.qpos[q : q + 3] = (x, y, TABLE_TOP_Z + float(obstacle["height_m"]) / 2)
+        data.qpos[q + 3 : q + 7] = (1.0, 0.0, 0.0, 0.0)
+        model.geom_size[self._obstacle_geom][:2] = (float(obstacle["width_m"]) / 2, float(obstacle["height_m"]) / 2)
+        model.geom_friction[self._obstacle_geom][0] = float(obstacle["friction"])
+        if obstacle["mass_kg"] is not None:
+            model.body_mass[self._obstacle_body] = float(obstacle["mass_kg"])
+        mujoco.mj_setConst(model, data)
 
     def _cube(self, data: mujoco.MjData, x: float, y: float, z: float) -> None:
         a = self._cube_qpos
@@ -82,6 +98,7 @@ class SkillDriver:
 
     def apply(self, model: mujoco.MjModel, data: mujoco.MjData, setpoint: Setpoint) -> None:
         model.site_pos[self._cursor] = (setpoint.x, setpoint.y, TABLE_TOP_Z + setpoint.z)
+        self._obstacle(model, data, setpoint.obstacle)
         if setpoint.attached or setpoint.op in {"replay_trajectory", "goto"}:
             self._cube(data, setpoint.x, setpoint.y, setpoint.z)
         mujoco.mj_forward(model, data)
@@ -154,6 +171,16 @@ def main() -> None:
                     try:
                         if runner.reload_if_changed():
                             print("skill spec reloaded")
+                            spec_ver = getattr(runner.spec, "version", 2) if hasattr(runner, "spec") else 2
+                            with span("patch_spec", hot_swap=True, spec_version=spec_ver):
+                                record_event(
+                                    "release",
+                                    hot_swap=True,
+                                    zero_downtime=True,
+                                    spec_version=spec_ver,
+                                    source="twin_hot_swap",
+                                    status="ZERO_DOWNTIME",
+                                )
                     except SpecError as exc:
                         print(f"skill spec rejected; keeping current skill: {exc}")
 
