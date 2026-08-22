@@ -21,7 +21,14 @@ def build_steps(params: ExtractedParams, catalog: dict[str, Any] | None = None) 
             ]
         )
     else:
-        steps.append({"op": "replay_trajectory", "path": params.path})
+        steps.append(
+            {
+                "op": "goto",
+                "start": list(params.start),
+                "end": list(params.end),
+                "duration_s": max(params.path[-1][2], 0.1),
+            }
+        )
 
     if params.obstacle_xy and catalog:
         steps.append(
@@ -55,7 +62,9 @@ def patch_spec(
         except json.JSONDecodeError:
             existing_steps = []
 
-    if params.obstacle_xy and catalog and append and existing_steps:
+    if append and existing_steps:
+        if not (params.obstacle_xy and catalog):
+            return {"version": 2, "steps": existing_steps}
         avoid_step = {
             "op": "avoid",
             "at": list(params.obstacle_xy),
@@ -65,6 +74,11 @@ def patch_spec(
             "material": catalog.get("material", "plastic"),
             **({"weight_g": catalog["weight_g"]} if catalog.get("weight_g") else {}),
         }
+        if any(
+            step.get("op") == "avoid" and step.get("at") == avoid_step["at"]
+            for step in existing_steps
+        ):
+            return {"version": 2, "steps": existing_steps}
         spec = {"version": 2, "steps": existing_steps + [avoid_step]}
         spec_path.write_text(json.dumps(spec, indent=2) + "\n")
         return spec
