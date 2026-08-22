@@ -43,7 +43,7 @@ const OFFLINE: LiveState = {
   views: ['operator', 'overhead', 'front', 'wide'],
   apriltag_size_cm: null,
   camera_index: 0,
-  signoz_ready: false,
+  tracer_mode: 'local',
   port_ready: false,
   brightdata_ready: false,
 };

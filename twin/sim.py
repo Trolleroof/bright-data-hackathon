@@ -2,14 +2,20 @@
 
 Default: sim only. With --camera, track_cube runs: the AprilTag anchors the
 table, the red blob is the cube, and the cube stays planted while you walk the
-camera around. Factory (record → params → ship) is not wired yet.
+camera around. Keys in this terminal (not the MuJoCo window):
+
+  R  start/stop recording (~3–12 s push) → fast-path factory on stop
+  F  append avoid step from last bag (Run B)
+  S  approve + run the skill spec in sim
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,11 +29,13 @@ import numpy as np
 from engine.runner import Runner, Setpoint
 from engine.spec import SpecError, load
 from integrations.config import load_settings
-from integrations.signoz import record_event, span, tracer_ready
+from integrations.tracing import record_event, span, tracer_ready
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
 CUBE_HALF = 0.025
+HUD_W, HUD_H = 480, 270
+LETTER_TAG_CM = 15.3
 
 
 def _cube_xy(model: mujoco.MjModel, data: mujoco.MjData) -> tuple[float, float]:
@@ -44,9 +52,7 @@ class CubeAnchor:
         self._qpos_adr = int(model.jnt_qposadr[joint])
         self._dof_adr = int(model.jnt_dofadr[joint])
         site = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "tag_origin")
-        # Tag frame origin in world: the tag taped to the back-left of the table.
         self.origin = np.array(model.site_pos[site][:2], dtype=np.float64)
-        # Table half-extents, so a bad frame cannot fling the cube off the world.
         tabletop = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "tabletop")
         self._limit = np.array(model.geom_size[tabletop][:2], dtype=np.float64) - CUBE_HALF
 
@@ -60,7 +66,6 @@ class CubeAnchor:
         data.qpos[a : a + 2] = xy
         data.qpos[a + 2] = TABLE_TOP_Z + CUBE_HALF
         data.qpos[a + 3 : a + 7] = (1.0, 0.0, 0.0, 0.0)
-        # Kinematic while tracked: no leftover velocity to fight the camera.
         data.qvel[self._dof_adr : self._dof_adr + 6] = 0.0
         return float(xy[0]), float(xy[1])
 
@@ -75,7 +80,9 @@ class SkillDriver:
         self._cursor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "skill_ee")
         self._obstacle_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
         self._obstacle_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "obstacle_geom")
-        self._obstacle_qpos = int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "obstacle_free")])
+        self._obstacle_qpos = int(
+            model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "obstacle_free")]
+        )
 
     def _obstacle(self, model: mujoco.MjModel, data: mujoco.MjData, obstacle: dict[str, object] | None) -> None:
         if obstacle is None:
@@ -104,94 +111,268 @@ class SkillDriver:
         mujoco.mj_forward(model, data)
 
 
+def _size_tag_to_env(model: mujoco.MjModel, tag_size_m: float) -> None:
+    if tag_size_m <= 0:
+        return
+    geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "apriltag")
+    model.geom_size[geom][0] = tag_size_m / 2.0
+    model.geom_size[geom][1] = tag_size_m / 2.0
+
+
+def _overlay(
+    viewer,
+    result,
+    world_xy: tuple[float, float] | None,
+    tag_cm: str,
+    hud,
+    cv2,
+    *,
+    prompt_state: str = "IDLE",
+    factory_busy: bool = False,
+) -> None:
+    tag = "YES" if result.tag_seen else "NO"
+    cube = f"{world_xy[0]:+.3f}  {world_xy[1]:+.3f}" if world_xy else "--"
+    raw = (
+        f"{result.cube_xy[0]:+.3f}  {result.cube_xy[1]:+.3f}"
+        if result.cube_xy
+        else "--"
+    )
+    factory_line = "busy" if factory_busy else "idle"
+    viewer.set_texts(
+        (
+            mujoco.mjtFontScale.mjFONTSCALE_150,
+            mujoco.mjtGridPos.mjGRID_TOPLEFT,
+            "prompt\nfactory\ntag\ncube world\ncube tag\nscale\nlatency",
+            f"{prompt_state}\n{factory_line}\n{tag}\n{cube}\n{raw}\n{tag_cm} cm\n{result.latency_ms:.0f} ms",
+        )
+    )
+    if result.frame is None or cv2 is None:
+        return
+    frame = hud.draw(result, prompt_state=prompt_state)
+    if frame is None:
+        return
+    rgb = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (HUD_W, HUD_H))
+    viewer.set_images((mujoco.MjrRect(16, 16, HUD_W, HUD_H), rgb))
+
+
+def _start_skill(model: mujoco.MjModel, spec_path: Path) -> tuple[Runner, SkillDriver] | tuple[None, None]:
+    if not spec_path.exists():
+        print(f"  no spec at {spec_path}; record a prompt first (R)")
+        return None, None
+    try:
+        return Runner(load(spec_path), spec_path), SkillDriver(model)
+    except SpecError as exc:
+        print(f"  skill spec rejected: {exc}")
+        return None, None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--camera", action="store_true", help="run track_cube from the webcam")
-    parser.add_argument("--no-hud", action="store_true", help="camera mode without the HUD window")
-    parser.add_argument("--skill", action="store_true", help="run outputs/skill_spec.json in the twin")
+    parser.add_argument("--camera", action="store_true", help="track_cube + record + factory from the webcam")
+    parser.add_argument("--skill", action="store_true", help="run outputs/skill_spec.json (no camera)")
     parser.add_argument("--spec", type=Path, default=ROOT / "outputs" / "skill_spec.json")
     args = parser.parse_args()
-    if args.camera and args.skill:
-        parser.error("--camera and --skill both control the cube; run one at a time")
 
     settings = load_settings()
     model = mujoco.MjModel.from_xml_path(str(SCENE))
+    _size_tag_to_env(model, settings.apriltag_size_m)
     data = mujoco.MjData(model)
-
-    # Parked pose: arm reaches slightly over the table, not a skill.
     data.ctrl[:] = 0.0
 
-    runner = None
-    driver = None
-    if args.skill:
-        try:
-            runner = Runner(load(args.spec), args.spec)
-        except SpecError as exc:
-            parser.error(f"skill spec rejected: {exc}")
-        driver = SkillDriver(model)
+    runner: Runner | None = None
+    driver: SkillDriver | None = None
+    skill_active = False
+    if args.skill and not args.camera:
+        runner, driver = _start_skill(model, args.spec)
+        if runner is None:
+            raise SystemExit(1)
+        skill_active = True
 
     tracker = None
     camera = None
     hud = None
     cv2 = None
     anchor = None
+    recorder = None
     if args.camera:
-        import cv2 as _cv2  # noqa: PLC0415 — optional dependency, sim-only mode must still run
+        import cv2 as _cv2  # noqa: PLC0415
 
+        from factory.fast_path import run_fast_path
         from vision import hud as _hud
+        from vision.keys import poll, raw_stdin
+        from vision.recorder import PhysicalPromptRecorder, PromptState
         from vision.track import build_tracker
 
         cv2, hud = _cv2, _hud
         camera, tracker = build_tracker()
         anchor = CubeAnchor(model)
+        recorder = PhysicalPromptRecorder(tracker)
         tracker.start()
+    else:
+        run_fast_path = None  # type: ignore[assignment,misc]
+        poll = raw_stdin = None  # type: ignore[assignment,misc]
+        PromptState = None  # type: ignore[assignment,misc]
 
     tag_cm = settings.apriltag_size_cm or "?"
-    mode = "track_cube" if args.camera else "skill engine" if args.skill else "sim only"
-    print(f"twin running  |  prompt=IDLE  |  {mode}  |  close the window to quit")
-    print(f"tag size in .env: {tag_cm} cm  |  SigNoz tracer: {tracer_ready()}")
+    if args.camera:
+        mode = "track_cube + record"
+    elif args.skill:
+        mode = "skill engine"
+    else:
+        mode = "sim only"
+    print(f"twin running  |  {mode}  |  close the MuJoCo window to quit")
+    print(f"tag size in .env: {tag_cm} cm  |  tracer: {tracer_ready()}")
+    if args.camera:
+        print("  keys in THIS terminal: R = record  |  F = factory append  |  S = run skill")
+    try:
+        configured = float(settings.apriltag_size_cm)
+    except ValueError:
+        configured = 0.0
+    if args.camera and configured and abs(configured - LETTER_TAG_CM) > 2.0:
+        print(
+            f"  scale warning: letter print at 100% is {LETTER_TAG_CM} cm; "
+            f".env has {configured} cm"
+        )
 
     last_log = 0.0
+    hud_ok = hud is not None
+    factory_busy = False
+    factory_lock = threading.Lock()
+    last_replay_passed = False
+
+    def _factory_done(result) -> None:
+        nonlocal factory_busy, last_replay_passed
+        with factory_lock:
+            factory_busy = False
+            last_replay_passed = result.replay.passed
+        print(
+            f"  factory done in {result.elapsed_ms} ms  |  replay={result.replay.detail}  |  "
+            f"spec={result.spec_path.name}"
+        )
+        if result.catalog:
+            print(
+                f"  scrape: {result.catalog.get('name')} "
+                f"{result.catalog.get('width_cm')}x{result.catalog.get('height_cm')} cm"
+            )
+        with span("approve", gate="fast_path_auto_approval", operator="auto"):
+            if result.replay.passed:
+                record_event(
+                    "release",
+                    hot_swap=True,
+                    zero_downtime=True,
+                    spec_version=2,
+                    source="twin_factory",
+                    status="ZERO_DOWNTIME",
+                )
+        print("  press S to run the skill (walk the camera meanwhile)")
+
+    def _run_factory(bag_path: Path, *, append: bool = False) -> None:
+        nonlocal factory_busy
+        with factory_lock:
+            if factory_busy:
+                print("  factory already running")
+                return
+            factory_busy = True
+
+        def _work() -> None:
+            nonlocal factory_busy
+            try:
+                result = run_fast_path(bag_path, args.spec, append=append)
+            except Exception as exc:  # noqa: BLE001
+                with factory_lock:
+                    factory_busy = False
+                print(f"  factory failed: {exc}")
+                return
+            _factory_done(result)
+
+        threading.Thread(target=_work, name="bidex-factory", daemon=True).start()
+
     with span("update_twin", prompt_state="IDLE"):
         pass
 
+    stdin_ctx = raw_stdin() if args.camera else nullcontext()
     try:
-        with mujoco.viewer.launch_passive(model, data) as viewer:
+        with stdin_ctx, mujoco.viewer.launch_passive(model, data) as viewer:
             while viewer.is_running():
                 step_start = time.time()
 
                 result = tracker.latest if tracker is not None else None
-                if result is not None and result.cube_xy is not None and anchor is not None:
-                    anchor.apply(data, result.cube_xy)
-                if runner is not None and driver is not None:
-                    if not runner.finished:
-                        setpoint = runner.tick(data.time)
-                        if setpoint is not None:
-                            driver.apply(model, data, setpoint)
+                prompt_state = recorder.state.value if recorder is not None else "IDLE"
+                world_xy = None
+                tracking = (
+                    args.camera
+                    and anchor is not None
+                    and result is not None
+                    and (not skill_active or (runner is not None and runner.finished))
+                )
+                if tracking and result.cube_xy is not None:
+                    world_xy = anchor.apply(data, result.cube_xy)
+
+                if recorder is not None and result is not None and recorder.state is PromptState.RECORDING:
+                    recorder.sample(result)
+
+                if runner is not None and driver is not None and skill_active and not runner.finished:
+                    setpoint = runner.tick(data.time)
+                    if setpoint is not None:
+                        driver.apply(model, data, setpoint)
+                    if runner.finished:
+                        skill_active = False
+                        print("  skill complete — back to track_cube")
                     try:
                         if runner.reload_if_changed():
                             print("skill spec reloaded")
-                            spec_ver = getattr(runner.spec, "version", 2) if hasattr(runner, "spec") else 2
-                            with span("patch_spec", hot_swap=True, spec_version=spec_ver):
+                            with span("patch_spec", hot_swap=True, spec_version=2):
                                 record_event(
                                     "release",
                                     hot_swap=True,
                                     zero_downtime=True,
-                                    spec_version=spec_ver,
+                                    spec_version=2,
                                     source="twin_hot_swap",
                                     status="ZERO_DOWNTIME",
                                 )
                     except SpecError as exc:
                         print(f"skill spec rejected; keeping current skill: {exc}")
 
-                mujoco.mj_step(model, data)
-                viewer.sync()
+                if args.camera and poll is not None:
+                    key = poll(use_cv2=False)
+                    if key in (ord("r"), ord("R")) and recorder is not None and result is not None:
+                        state = recorder.toggle(result)
+                        print(f"  prompt={state.value}")
+                        if state is PromptState.PROMPTED and recorder.last_bag_path:
+                            _run_factory(Path(recorder.last_bag_path))
+                    elif key in (ord("f"), ord("F")) and recorder is not None and recorder.last_bag_path:
+                        _run_factory(Path(recorder.last_bag_path), append=True)
+                    elif key in (ord("s"), ord("S")):
+                        if not last_replay_passed and not args.spec.exists():
+                            print("  record a prompt first (R), wait for factory PASS, then S")
+                        else:
+                            runner, driver = _start_skill(model, args.spec)
+                            if runner is not None:
+                                skill_active = True
+                                print("  skill running")
+                                with span("skill_exec", spec_path=str(args.spec), source="twin_key"):
+                                    pass
 
-                if hud is not None and result is not None and not args.no_hud:
-                    frame = hud.draw(result)
-                    if frame is not None:
-                        cv2.imshow("Bidex — track_cube", frame)
-                        cv2.waitKey(1)
+                mujoco.mj_step(model, data)
+                if result is not None and hud is not None:
+                    try:
+                        with factory_lock:
+                            busy = factory_busy
+                        _overlay(
+                            viewer,
+                            result,
+                            world_xy,
+                            tag_cm,
+                            hud,
+                            cv2,
+                            prompt_state=prompt_state,
+                            factory_busy=busy,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        if hud_ok:
+                            print(f"  overlay skipped: {exc}")
+                            hud_ok = False
+                viewer.sync()
 
                 now = time.time()
                 if now - last_log > 2.0:
@@ -199,7 +380,7 @@ def main() -> None:
                     if result is not None:
                         seen = "yes" if result.tag_seen else "no"
                         print(
-                            f"  cube x={x:+.3f} y={y:+.3f}  tag={seen}  "
+                            f"  cube x={x:+.3f} y={y:+.3f}  tag={seen}  prompt={prompt_state}  "
                             f"{result.latency_ms:.1f} ms  {result.fps:.1f} fps"
                         )
                     else:
@@ -214,8 +395,6 @@ def main() -> None:
             tracker.stop()
         if camera is not None:
             camera.close()
-        if cv2 is not None:
-            cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

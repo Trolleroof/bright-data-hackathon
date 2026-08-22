@@ -26,9 +26,7 @@ export async function GET() {
 
   return NextResponse.json({
     service: 'bidex',
-    tracer_mode: 'signoz',
-    signoz_endpoint: 'http://localhost:4318/v1/traces',
-    signoz_ready: false,
+    tracer_mode: 'local',
     port_ready: false,
     brightdata_ready: false,
     total_spans: totalSpans,

@@ -18,6 +18,7 @@ import cv2
 from integrations.config import load_settings
 from vision import hud
 from vision.camera import Camera
+from vision.keys import is_quit, poll, raw_stdin
 from vision.tracker import CubeTracker
 
 
@@ -44,15 +45,18 @@ def build_tracker(camera: Camera | None = None) -> tuple[Camera, CubeTracker]:
 
 def main() -> int:
     camera, tracker = build_tracker()
-    print("track_cube  |  q or ESC to quit")
+    print("track_cube  |  q or ESC to quit (HUD window or this terminal)")
     try:
-        while True:
-            result = tracker.step()
-            frame = hud.draw(result)
-            if frame is not None:
-                cv2.imshow("ScaleTwin — track_cube", frame)
-            if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
-                break
+        with raw_stdin():
+            while True:
+                result = tracker.step()
+                frame = hud.draw(result)
+                if frame is not None:
+                    cv2.imshow("Bidex — track_cube", frame)
+                if is_quit(poll()):
+                    break
+    except KeyboardInterrupt:
+        print()
     finally:
         camera.close()
         cv2.destroyAllWindows()

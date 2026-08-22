@@ -11,7 +11,7 @@ from factory.patch import patch_spec
 from factory.replay_test import ReplayResult, replay_test
 from integrations.brightdata import lookup
 from integrations.config import ROOT, load_settings
-from integrations.signoz import record_event, span
+from integrations.tracing import record_event, span
 from vision.bag import PromptBag, load_bag
 
 

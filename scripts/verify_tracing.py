@@ -1,4 +1,4 @@
-"""Comprehensive verification suite for SigNoz & Flight Recorder integration (Issue #5).
+"""Comprehensive verification suite for the local tracing & Flight Recorder integration.
 
 Tests:
 1. Setup smoke test & fallback behavior
@@ -22,8 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from integrations.config import load_settings
-from integrations.signoz import (
+from integrations.tracing import (
     clear_spans,
     emit_demo_trace,
     get_raw_spans,
@@ -78,17 +77,9 @@ class TestRunner:
 
 
 def test_setup_and_fallback(runner: TestRunner) -> None:
-    print("\n--- 1. Setup & Fallback Smoke Test ---")
-    settings = load_settings()
+    print("\n--- 1. Setup Smoke Test ---")
     mode = tracer_ready()
-    runner.assert_true(
-        mode in ("console", "signoz"),
-        f"tracer_ready() returns valid mode ('{mode}')",
-    )
-    if not settings.signoz_ready:
-        runner.assert_equal(mode, "console", "Fallback to 'console' when keys are absent")
-    else:
-        runner.assert_equal(mode, "signoz", "Reports 'signoz' when keys are present")
+    runner.assert_equal(mode, "local", f"tracer_ready() reports the local collector ('{mode}')")
 
     smoke_result = smoke()
     runner.assert_equal(
@@ -319,7 +310,7 @@ def test_streaming_subscribers(runner: TestRunner) -> None:
 
 def main() -> int:
     print("================================================================")
-    print(" Bidex SigNoz & Flight Recorder Verification Suite (Issue #5)")
+    print(" Bidex Local Tracing & Flight Recorder Verification Suite")
     print("================================================================")
 
     runner = TestRunner()
@@ -334,7 +325,7 @@ def main() -> int:
     print("================================================================")
 
     if runner.failed == 0:
-        print("\nAll SigNoz & Flight Recorder integration tests PASSED (100%).")
+        print("\nAll local tracing & Flight Recorder integration tests PASSED (100%).")
         return 0
     else:
         print(f"\n{runner.failed} test(s) FAILED.")

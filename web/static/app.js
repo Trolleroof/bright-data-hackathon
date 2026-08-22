@@ -41,8 +41,8 @@
     // Header & Status
     sseStatusPill: document.getElementById('sse-status-pill'),
     sseStatusText: document.getElementById('sse-status-text'),
-    signozStatusPill: document.getElementById('signoz-status-pill'),
-    signozStatusText: document.getElementById('signoz-status-text'),
+    tracerStatusPill: document.getElementById('tracer-status-pill'),
+    tracerStatusText: document.getElementById('tracer-status-text'),
     metricTracesCount: document.getElementById('metric-traces-count'),
     metricSpansCount: document.getElementById('metric-spans-count'),
     metricLatestOp: document.getElementById('metric-latest-op'),
@@ -276,9 +276,10 @@
     if (el.metricTracesCount) el.metricTracesCount.textContent = status.total_traces ?? 0;
     if (el.metricSpansCount) el.metricSpansCount.textContent = status.total_spans ?? 0;
 
-    const isSigNoz = status.tracer_mode === 'signoz' || status.signoz_ready;
-    el.signozStatusText.textContent = isSigNoz ? 'SIGNOZ : READY' : 'SIGNOZ : LOCAL';
-    el.signozStatusPill.className = isSigNoz ? 'telemetry-pill signoz-pill' : 'telemetry-pill';
+    if (el.tracerStatusText) {
+      el.tracerStatusText.textContent = `TRACING : ${(status.tracer_mode || 'local').toUpperCase()}`;
+    }
+    if (el.tracerStatusPill) el.tracerStatusPill.className = 'telemetry-pill tracing-pill';
   }
 
   async function refreshTracesData(autoSelectLatest = false) {

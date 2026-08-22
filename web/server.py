@@ -5,7 +5,7 @@ Serves the telemetry HUD & Trace Waterfall UI, plus live OpenTelemetry trace API
 - GET  /api/traces/stream   -> Server-Sent Events (SSE) live span feed
 - POST /api/traces/demo     -> Emits a full demo trace tree (Run A or Run B)
 - POST /api/traces/clear    -> Clears recorded spans
-- GET  /api/status          -> Service status, SigNoz readiness, counters
+- GET  /api/status          -> Service status, tracer readiness, counters
 - GET  /api/live            -> Combined twin + camera state for the live HUD
 - POST /api/live/control    -> start/stop/configure the twin and the camera
 - GET  /api/sim/stream      -> MJPEG feed of the headless MuJoCo twin
@@ -35,7 +35,7 @@ if str(ROOT) not in sys.path:
 from integrations.config import load_settings
 from twin.live import TWIN, VIEWS
 from vision.live import CAMERA
-from integrations.signoz import (
+from integrations.tracing import (
     clear_spans,
     emit_demo_trace,
     get_raw_spans,
@@ -142,8 +142,6 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
         self._send_json({
             "service": settings.otel_service_name,
             "tracer_mode": tracer_ready(),
-            "signoz_endpoint": settings.signoz_endpoint if settings.signoz_ready else None,
-            "signoz_ready": settings.signoz_ready,
             "port_ready": settings.port_ready,
             "brightdata_ready": settings.brightdata_ready,
             "total_spans": len(spans),
@@ -160,7 +158,7 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             "views": sorted(VIEWS),
             "apriltag_size_cm": settings.apriltag_size_cm or None,
             "camera_index": settings.camera_index,
-            "signoz_ready": settings.signoz_ready,
+            "tracer_mode": tracer_ready(),
             "port_ready": settings.port_ready,
             "brightdata_ready": settings.brightdata_ready,
         })

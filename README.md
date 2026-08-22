@@ -1,6 +1,6 @@
 # Bidex — setup
 
-Twin window + Port / SigNoz / Bright Data stubs. Demo loop is not built yet.
+Twin window + Port / Bright Data stubs and local OpenTelemetry tracing. Demo loop is not built yet.
 
 ```bash
 cd /Users/nikhi/zero-downtime-hackathon
@@ -21,7 +21,7 @@ write the result onto the cube in MuJoCo. Walk the camera, the cube stays put.
 ```bash
 python scripts/check_vision.py    # geometry proof, no camera needed
 python -m vision.track            # camera + HUD (tag seen / cube x,y / latency)
-python -m twin.sim --camera       # the twin, with the cube tracked
+mjpython -m twin.sim --camera     # twin + track + record + factory + skill
 ```
 
 Measure the outer black square of the printed tag and put it in `.env` as
@@ -29,12 +29,20 @@ Measure the outer black square of the printed tag and put it in `.env` as
 tuning (`CAMERA_INDEX`, `CAMERA_FOV_DEG`, `CUBE_TRACK_HEIGHT_CM`) is in
 `.env.example`. macOS will ask for camera permission the first time.
 
+With `--camera`, keys go in **this terminal** (not the MuJoCo window):
+
+| Key | Action |
+|---|---|
+| `R` | Start/stop recording (~3–12 s push) → fast-path factory on stop |
+| `F` | Append avoid step from last bag (Run B) |
+| `S` | Run the skill spec in sim (after factory PASS) |
+
 Missing sponsor keys = that row says skipped. The sim still opens.
 
 ## Everything in one browser tab
 
 `web/` is the mission-control UI: the MuJoCo twin, the live camera feed, the
-cube telemetry, and the SigNoz trace waterfall side by side. The twin is
+cube telemetry, and the local trace waterfall side by side. The twin is
 rendered headless (`twin/live.py`) and the camera runs `track_cube` in the
 background (`vision/live.py`); both are pushed to the browser as MJPEG, so
 there is no native window to arrange and no viewer to keep alive.
@@ -95,7 +103,6 @@ Fill `.env` when you have them:
 
 | Key | Where |
 |---|---|
-| `SIGNOZ_ENDPOINT`, `SIGNOZ_INGESTION_KEY` | SigNoz → Settings → Ingestion |
 | `PORT_CLIENT_ID`, `PORT_CLIENT_SECRET` | Port → profile → Credentials |
 | `BRIGHTDATA_API_TOKEN`, `BRIGHTDATA_SERP_ZONE`, `BRIGHTDATA_UNLOCKER_ZONE` | Bright Data → API token + a SERP zone + a Web Unlocker zone |
 | `APRILTAG_SIZE_CM` | ruler, outer black square after you tape the tag |

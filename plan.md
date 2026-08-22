@@ -122,8 +122,8 @@ MuJoCo + HUD. Always on. Runs the **primitive engine** from the current skill sp
 **Physical prompt (the teaching)**  
 Record 3–12 s, then stop. Bag → waypoint extraction + Port ticket. Walking the camera alone is not a prompt.
 
-**SigNoz (alarm + black box)**  
-`physical_prompt` when recording ends. Spans: `detect`, `tag_pose`, `update_twin`, `extract_params`, `scrape`, `patch_spec`, `test`, `approve`, `skill_exec`. Judges read the timeline, not a dashboard tour.
+**Local tracing (alarm + black box)**  
+In-process OpenTelemetry spans, kept in memory and served straight to the flight-recorder UI — no vendor backend. `physical_prompt` when recording ends. Spans: `detect`, `tag_pose`, `update_twin`, `extract_params`, `scrape`, `patch_spec`, `test`, `approve`, `skill_exec`. Judges read the timeline, not a dashboard tour.
 
 **Port (job board)**  
 Stages: prompt → extract → scrape → patch → test → **Approve** → release. Tracks `PhysicalPrompt`, `ChangeRequest`, `FactoryRun`, `ScraperJob`, `TwinRelease`. Agents on slow path only: planner, implementer, tester, scraper-repair. Approve ships the new spec. Walk the camera during Approve = zero downtime.
@@ -140,7 +140,7 @@ Tests the spec against the recording, not your live hand. Pass → Approve. Play
 
 **Run A — `goto`**
 1. Walk camera. Push cube. Twin tracks.
-2. Record ~8 s: push cube to target. `PROMPTED` → SigNoz → Port.
+2. Record ~8 s: push cube to target. `PROMPTED` → trace timeline → Port.
 3. Fast path patches `goto` params. Approve. Walk camera while Approve is up.
 4. Virtual arm runs `goto` alone.
 
@@ -202,7 +202,7 @@ Tag must stay in frame. Do not move it after taping.
 - Bottle size from Bright Data JSON; auto-repair shown once
 - Replay gates Approve; camera-move during ship proves zero downtime
 - `compose(replay, avoid)` works; pick-and-place chain works; replay succeeds twice
-- SigNoz alone explains both runs
+- The trace timeline alone explains both runs
 - Adding run C is “append a step,” not a rewrite
 
 ---
@@ -212,4 +212,4 @@ Tag must stay in frame. Do not move it after taping.
 > GEN-1.5 generalizes by pretraining.  
 > Bidex generalizes by **composable primitives**: show once, extract params, scrape size from the web, ship without downtime.  
 > Same engine for any catalog object. More skills = longer compose chain, not new code.  
-> Port shows the run. SigNoz shows the proof.
+> Port shows the run. The trace timeline shows the proof.

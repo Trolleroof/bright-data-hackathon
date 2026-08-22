@@ -14,7 +14,7 @@ import mujoco
 from integrations.brightdata import smoke as brightdata_smoke
 from integrations.config import load_settings
 from integrations.port import smoke as port_smoke
-from integrations.signoz import smoke as signoz_smoke
+from integrations.tracing import smoke as tracing_smoke
 
 
 def check_twin() -> str:
@@ -55,7 +55,7 @@ def main() -> int:
     checks = [
         ("twin", check_twin),
         ("vision", check_vision),
-        ("signoz", signoz_smoke),
+        ("tracing", tracing_smoke),
         ("port", port_smoke),
         ("brightdata", brightdata_smoke),
     ]
@@ -69,18 +69,16 @@ def main() -> int:
 
     print("Bidex setup")
     print(f"  tag cm: {settings.apriltag_size_cm or '(not set)'}")
-    print(f"  keys: signoz={settings.signoz_ready} port={settings.port_ready} brightdata={settings.brightdata_ready}")
+    print(f"  keys: port={settings.port_ready} brightdata={settings.brightdata_ready}")
     print()
     width = max(len(name) for name, _, _ in rows)
     for name, status, detail in rows:
         print(f"  {name.ljust(width)}  {status:4}  {detail}")
     print()
     print("Next: python scripts/check_vision.py   (track_cube geometry, no camera)")
-    print("      python -m vision.track            (camera + HUD)")
-    print("      python -m vision.record           (record prompt + factory)")
+    print("      mjpython -m twin.sim --camera     (track + record + factory + skill)")
     print("      python scripts/run_factory.py --smoke")
-    print("      python -m twin.sim --camera       (twin with the cube tracked)")
-    print("      python -m twin.sim --skill        (run outputs/skill_spec.json)")
+    print("      python -m twin.sim --skill        (replay spec only, no camera)")
     return 1 if failed else 0
 
 

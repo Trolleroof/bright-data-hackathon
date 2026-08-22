@@ -24,7 +24,7 @@ import mujoco
 
 from engine.runner import Runner
 from engine.spec import SpecError, load
-from integrations.signoz import record_event, span
+from integrations.tracing import record_event, span
 from twin.sim import CubeAnchor, SkillDriver, _cube_xy
 from vision.live import CAMERA
 
