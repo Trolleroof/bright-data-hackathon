@@ -32,6 +32,7 @@ class CameraState:
     height: int = 0
     frames: int = 0
     prompt_state: str = "IDLE"
+    detection: dict[str, Any] | None = None
 
     def as_json(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -53,6 +54,7 @@ class LiveCamera:
         self._tracker = None
         self._prompt_state = "IDLE"
         self._frame_event = threading.Event()
+        self._detection = None
 
     # --- lifecycle -------------------------------------------------------
     @property
@@ -102,13 +104,24 @@ class LiveCamera:
     def set_prompt_state(self, prompt_state: str) -> None:
         self._prompt_state = prompt_state
 
+    @property
+    def detection(self):  # noqa: ANN201 — Detection or None, consumed by the import flow
+        return self._detection
+
     # --- loop ------------------------------------------------------------
     def _loop(self) -> None:
         import cv2  # noqa: PLC0415 — only needed when the camera actually runs
 
         from vision import hud  # noqa: PLC0415
 
+        from integrations.object_import import IMPORTER  # noqa: PLC0415
+        from vision.detect import detect_object  # noqa: PLC0415
+
         frames = 0
+        # The bounding-box pass is heavier than the tracker and nobody needs it
+        # at frame rate: an object that appears is still there 200 ms later.
+        detect_period_s = 0.2
+        next_detect = 0.0
         while not self._stop.is_set():
             try:
                 result = self._tracker.step()
@@ -118,7 +131,21 @@ class LiveCamera:
                 time.sleep(0.1)
                 continue
 
-            frame = hud.draw(result, prompt_state=self._prompt_state)
+            now = time.monotonic()
+            if result.frame is not None and now >= next_detect:
+                next_detect = now + detect_period_s
+                try:
+                    self._detection = detect_object(result.frame)
+                except Exception:  # noqa: BLE001 — detection is advisory, never fatal
+                    self._detection = None
+                IMPORTER.observe(self._detection)
+
+            frame = hud.draw(
+                result,
+                prompt_state=self._prompt_state,
+                detection=self._detection,
+                import_state=IMPORTER.state(),
+            )
             jpeg: bytes | None = None
             if frame is not None:
                 ok, buf = cv2.imencode(
@@ -144,6 +171,7 @@ class LiveCamera:
                     height=self._camera.height if self._camera else 0,
                     frames=frames,
                     prompt_state=self._prompt_state,
+                    detection=self._detection.as_json() if self._detection else None,
                 )
             self._frame_event.set()
             self._frame_event.clear()

@@ -31,8 +31,17 @@ RUNG_LABELS = {
 }
 
 
+def is_primitive(asset: dict[str, Any] | None) -> bool:
+    return bool(asset) and asset.get("kind") == "primitive"
+
+
 def rung_label(asset: dict[str, Any] | None) -> str:
     rung = int(asset["rung"]) if asset else 3
+    if is_primitive(asset):
+        # Still rung 3, but say *which* primitive: an imported stub sized from a
+        # catalogue is not the same thing as the stock obstacle in scene.xml.
+        label = str(asset.get("label") or "object")
+        return f"rung 3: primitive {asset.get('shape', 'cylinder')} ({label})"
     return f"rung {rung}: {RUNG_LABELS.get(rung, 'unknown')}"
 
 
@@ -41,6 +50,29 @@ def _mesh_assets_xml(asset: dict[str, Any]) -> str:
         f'    <mesh name="obstacle_visual_mesh" file="{asset["visual_path"]}"/>\n'
         f'    <mesh name="obstacle_collision_mesh" file="{asset["collision_path"]}"/>\n'
         f"  {_ASSET_CLOSE}"
+    )
+
+
+def _primitive_body_xml(asset: dict[str, Any]) -> str:
+    """A sized, coloured primitive — the hardcoded grey-bottle import lands here.
+
+    No <asset> entry is needed: MuJoCo primitives carry their own geometry, so
+    the swap is a body rewrite and nothing else.
+    """
+    radius = float(asset.get("radius_m", 0.035))
+    half_height = float(asset.get("half_height_m", 0.12))
+    density = float(asset.get("density_kg_m3", 950.0))
+    r, g, b, a = (list(asset.get("rgba", [0.42, 0.44, 0.47, 1.0])) + [1.0])[:4]
+    shape = "box" if str(asset.get("shape")) == "box" else "cylinder"
+    size = (
+        f"{radius} {radius} {half_height}" if shape == "box" else f"{radius} {half_height}"
+    )
+    return (
+        f'<body name="obstacle" pos="0 0 {round(0.761 + half_height, 4)}">\n'
+        '      <freejoint name="obstacle_free"/>\n'
+        f'      <geom name="obstacle_geom" type="{shape}" size="{size}"\n'
+        f'            density="{density}" rgba="{r} {g} {b} {a}"/>\n'
+        "    </body>"
     )
 
 
@@ -77,8 +109,12 @@ def build_scene(asset: dict[str, Any] | None, out_path: Path | None = None) -> P
     if not asset:
         return SCENE
     xml = SCENE.read_text()
-    xml = xml.replace(_ASSET_CLOSE, _mesh_assets_xml(asset), 1)
-    xml, count = _OBSTACLE_BODY.subn(_mesh_body_xml(asset), xml, count=1)
+    if is_primitive(asset):
+        body = _primitive_body_xml(asset)
+    else:
+        xml = xml.replace(_ASSET_CLOSE, _mesh_assets_xml(asset), 1)
+        body = _mesh_body_xml(asset)
+    xml, count = _OBSTACLE_BODY.subn(body, xml, count=1)
     if count != 1:
         raise SceneBuildError(f'no <body name="obstacle"> to replace in {SCENE.name}')
     out_path = out_path or GENERATED

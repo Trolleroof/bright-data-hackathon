@@ -22,10 +22,31 @@ def _draw_line(frame: np.ndarray, text: str, x: int, y: int, color, scale: float
     cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
 
 
+_IMPORT_COLORS = {
+    "AWAITING": _AMBER,
+    "IMPORTING": (255, 180, 60),
+    "READY": _GREEN,
+    "FAILED": _RED,
+}
+
+
+def _draw_detection(frame: np.ndarray, detection: Any, import_status: str) -> None:
+    """The bounding box, plus what the import flow currently thinks of it."""
+    x, y, w, h = detection.bbox
+    color = _IMPORT_COLORS.get(import_status, _WHITE)
+    cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+    caption = f"{detection.label}  {detection.confidence:.0%}"
+    if import_status in _IMPORT_COLORS:
+        caption += f"  [{import_status}]"
+    _draw_line(frame, caption, x, max(y - 8, 18), color, scale=0.55)
+
+
 def draw(
     result: TrackResult,
     prompt_state: str = "IDLE",
     catalog: dict[str, Any] | None = None,
+    detection: Any | None = None,
+    import_state: dict[str, Any] | None = None,
 ) -> np.ndarray | None:
     if result.frame is None:
         return None
@@ -38,6 +59,8 @@ def draw(
     if result.blob is not None:
         cv2.drawContours(frame, [result.blob.contour], -1, _RED, 2)
         cv2.circle(frame, (int(result.blob.u), int(result.blob.v)), 4, _WHITE, -1)
+    if detection is not None:
+        _draw_detection(frame, detection, str((import_state or {}).get("status", "IDLE")))
 
     state_color = _GREEN if prompt_state == "IDLE" else (60, 180, 255) if prompt_state == "RECORDING" else (255, 180, 60)
     lines = [
@@ -55,6 +78,18 @@ def draw(
     y = 28
     for text, color in lines:
         _draw_line(frame, text, 12, y, color)
+        y += 28
+
+    status = str((import_state or {}).get("status", "IDLE"))
+    if status in _IMPORT_COLORS:
+        label = str((import_state or {}).get("label", "object"))
+        text = {
+            "AWAITING": f"import {label}? -> answer in the dashboard",
+            "IMPORTING": f"importing {label}…",
+            "READY": f"{label} loaded into the twin",
+            "FAILED": f"import failed: {(import_state or {}).get('error', '')}"[:70],
+        }[status]
+        _draw_line(frame, text, 12, y, _IMPORT_COLORS[status])
         y += 28
 
     if catalog is not None:

@@ -48,7 +48,21 @@ mesh:
 
   # Rung 2. One SERP query per source: discovery across many sources at once is
   # the point — a single curated dataset would not need search at all.
+  #
+  # MuJoCo's own asset ecosystem comes first: those meshes are already authored
+  # for a physics engine (right units, watertight, sane face counts), so they
+  # need the least repair in mesh_fit. The general 3D-print/asset web follows as
+  # the broad net for objects no robotics dataset happens to carry.
   sources:
+    - name: mujoco_menagerie
+      query: "site:github.com google-deepmind mujoco_menagerie {label} mesh stl obj"
+      host: github.com
+    - name: mujoco_scanned_objects
+      query: "site:github.com mujoco_scanned_objects {label} obj"
+      host: github.com
+    - name: mujoco_docs
+      query: "site:mujoco.readthedocs.io OR site:mujoco.org {label} model asset"
+      host: ""
     - name: thingiverse
       query: "site:thingiverse.com {label} stl"
       host: thingiverse.com

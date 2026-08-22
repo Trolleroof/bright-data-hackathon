@@ -86,6 +86,43 @@ export interface TwinState {
   spec_path: string | null;
 }
 
+/** One bounding box the twin has no geometry for yet. */
+export interface DetectionState {
+  label: string;
+  bbox: [number, number, number, number] | number[];
+  area_px: number;
+  aspect: number;
+  confidence: number;
+  is_gray: boolean;
+  /** True for the grey water bottle: imports as a stub cylinder, no download. */
+  hardcoded: boolean;
+}
+
+export type ImportStatus =
+  | 'IDLE'
+  | 'AWAITING'
+  | 'IMPORTING'
+  | 'READY'
+  | 'FAILED'
+  | 'DISMISSED'
+  | string;
+
+export interface ObjectImportState {
+  status: ImportStatus;
+  label: string;
+  bbox: number[];
+  confidence: number;
+  hardcoded: boolean;
+  source: string | null;
+  rung: number | null;
+  detail: string;
+  error: string | null;
+  asset: Record<string, unknown> | null;
+  started_at: number | null;
+  elapsed_ms: number | null;
+  asset_path?: string;
+}
+
 export interface CameraState {
   running: boolean;
   error: string | null;
@@ -99,12 +136,14 @@ export interface CameraState {
   height: number;
   frames: number;
   prompt_state: PromptState;
+  detection: DetectionState | null;
 }
 
 export interface LiveState {
   backend_online: boolean;
   twin: TwinState;
   camera: CameraState;
+  object_import: ObjectImportState;
   views: string[];
   apriltag_size_cm: string | null;
   camera_index: number;

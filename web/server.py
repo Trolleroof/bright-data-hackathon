@@ -8,6 +8,8 @@ Serves the telemetry HUD & Trace Waterfall UI, plus live OpenTelemetry trace API
 - GET  /api/status          -> Service status, tracer readiness, counters
 - GET  /api/live            -> Combined twin + camera state for the live HUD
 - POST /api/live/control    -> start/stop/configure the twin and the camera
+- GET  /api/import          -> Pending object-import prompt / progress / result
+- POST /api/import/decision -> Answer the prompt: {"decision": "import"|"dismiss"}
 - GET  /api/sim/stream      -> MJPEG feed of the headless MuJoCo twin
 - GET  /api/sim/frame       -> Single JPEG of the twin
 - GET  /api/camera/stream   -> MJPEG feed of track_cube with the HUD overlay
@@ -37,6 +39,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from integrations.config import load_settings
+from integrations.object_import import IMPORTER
 from twin.live import TWIN, VIEWS
 from vision.live import CAMERA
 from integrations.tracing import (
@@ -98,6 +101,8 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             self._handle_mjpeg(CAMERA.frame_jpeg)
         elif path == "/api/camera/frame":
             self._handle_single_frame(CAMERA.frame_jpeg)
+        elif path == "/api/import":
+            self._send_json(IMPORTER.state())
         elif path == "/api/checks":
             self._send_json({"checks": list_checks(), "suite": SUITE})
         elif path == "/api/checks/job":
@@ -134,6 +139,15 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             self._send_json({"status": "cleared"})
         elif path == "/api/live/control":
             self._handle_live_control()
+        elif path == "/api/import/decision":
+            payload = self._read_json_body()
+            decision = str(payload.get("decision", "")).lower()
+            if decision == "reset":
+                self._send_json(IMPORTER.reset())
+            elif decision in {"import", "accept", "yes", "dismiss", "decline", "no"}:
+                self._send_json(IMPORTER.decide(decision))
+            else:
+                self._send_json({"error": f"unknown decision: {decision}"}, status=400)
         elif path == "/api/checks/run":
             self._handle_run_checks(self._read_json_body())
         elif path == "/api/checks/cancel":
@@ -243,6 +257,7 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
         self._send_json({
             "twin": TWIN.state(),
             "camera": CAMERA.state(),
+            "object_import": IMPORTER.state(),
             "views": sorted(VIEWS),
             "apriltag_size_cm": settings.apriltag_size_cm or None,
             "camera_index": settings.camera_index,

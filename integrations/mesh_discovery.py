@@ -78,6 +78,23 @@ def _ext_of(url: str, extensions: list[str]) -> str | None:
     return None
 
 
+_GITHUB_BLOB = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/blob/(.+)$", re.IGNORECASE)
+
+
+def _direct_url(url: str) -> str:
+    """github.com/o/r/blob/... is an HTML page; the file lives on raw.\u200b...
+
+    MuJoCo's asset repos (Menagerie, mujoco_scanned_objects) are GitHub trees,
+    so without this rewrite every hit downloads a page of markup instead of a
+    mesh.
+    """
+    match = _GITHUB_BLOB.match(url)
+    if not match:
+        return url
+    owner, repo, rest = match.groups()
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{rest.split('?')[0]}"
+
+
 def asset_links(html: str, base_url: str, extensions: list[str]) -> list[str]:
     """Every direct 3D-asset URL a page exposes, absolute and deduplicated.
 
@@ -90,7 +107,7 @@ def asset_links(html: str, base_url: str, extensions: list[str]) -> list[str]:
     def _add(raw: str | None) -> None:
         if not raw:
             return
-        url = urljoin(base_url, raw.strip())
+        url = _direct_url(urljoin(base_url, raw.strip()))
         if _ext_of(url, extensions) and url not in found:
             found.append(url)
 
@@ -152,7 +169,8 @@ def web_candidates(
         for url in urls:
             # A SERP hit that already *is* the file needs no page fetch.
             if _ext_of(url, extensions):
-                candidates.append(MeshCandidate(url, url, name, 2, _ext_of(url, extensions) or ""))
+                direct = _direct_url(url)
+                candidates.append(MeshCandidate(direct, url, name, 2, _ext_of(direct, extensions) or ""))
 
         for page in pages:
             try:
