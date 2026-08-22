@@ -47,6 +47,19 @@ def check_vision() -> str:
     return f"opencv {cv2.__version__}, tag {settings.apriltag_size_cm} cm"
 
 
+def check_mesh() -> str:
+    """Which geometry rung the twin would open on, and whether fitting works."""
+    from factory.mesh_fit import load_asset  # noqa: PLC0415
+    from twin.world import rung_label  # noqa: PLC0415
+
+    asset = load_asset()
+    try:
+        import trimesh  # noqa: PLC0415, F401
+    except ImportError:
+        return f"{rung_label(asset)}. trimesh missing -> web meshes SKIPPED"
+    return f"{rung_label(asset)}. run scripts/check_mesh.py for the fit proof"
+
+
 def main() -> int:
     settings = load_settings()
     rows: list[tuple[str, str, str]] = []
@@ -58,6 +71,7 @@ def main() -> int:
         ("tracing", tracing_smoke),
         ("port", port_smoke),
         ("brightdata", brightdata_smoke),
+        ("mesh", check_mesh),
     ]
     for name, fn in checks:
         try:
@@ -78,6 +92,7 @@ def main() -> int:
     print("Next: python scripts/check_vision.py   (track_cube geometry, no camera)")
     print("      mjpython -m twin.sim --camera     (track + record + factory + skill)")
     print("      python scripts/run_factory.py --smoke")
+    print("      python scripts/check_mesh.py      (geometry ladder, offline)")
     print("      python -m twin.sim --skill        (replay spec only, no camera)")
     return 1 if failed else 0
 

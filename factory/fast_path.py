@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from factory.extract import ExtractedParams, extract
+from factory.mesh_ladder import MeshLadderResult, acquire
 from factory.patch import patch_spec
 from factory.replay_test import ReplayResult, replay_test
 from integrations.brightdata import lookup
@@ -21,6 +22,7 @@ class FactoryResult:
     spec_path: Path
     extracted: ExtractedParams
     catalog: dict | None
+    mesh: MeshLadderResult | None
     replay: ReplayResult
     elapsed_ms: float
 
@@ -31,6 +33,7 @@ def run_fast_path(
     *,
     scrape_label: str | None = None,
     append: bool = False,
+    mesh: bool = True,
 ) -> FactoryResult:
     started = time.perf_counter()
     spec_path = spec_path or (ROOT / "outputs" / "skill_spec.json")
@@ -48,6 +51,7 @@ def run_fast_path(
         )
 
     catalog = None
+    mesh_result: MeshLadderResult | None = None
     if params.obstacle_xy:
         label = scrape_label or params.obstacle_label or "water bottle"
         with span("scrape", label=label):
@@ -61,8 +65,20 @@ def run_fast_path(
                 height_cm=catalog.get("height_cm"),
             )
 
+        # Shape is the one thing neither the camera nor the scrape can produce.
+        # Rung 3 (the primitive) is a normal outcome here, not an error path.
+        if mesh:
+            mesh_result = acquire(label, catalog)
+            record_event("mesh_rung", rung=mesh_result.rung, label=mesh_result.label)
+
     with span("patch_spec", spec_path=str(spec_path), append=append):
-        spec = patch_spec(params, spec_path, catalog, append=append)
+        spec = patch_spec(
+            params,
+            spec_path,
+            catalog,
+            append=append,
+            mesh=mesh_result.asset if mesh_result else None,
+        )
         record_event("spec_patched", step_count=len(spec["steps"]), motion=params.motion)
 
     with span("test", test_gate="replay_bag_exam"):
@@ -75,7 +91,7 @@ def run_fast_path(
         )
 
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
-    return FactoryResult(bag_path, spec_path, params, catalog, replay, elapsed_ms)
+    return FactoryResult(bag_path, spec_path, params, catalog, mesh_result, replay, elapsed_ms)
 
 
 def smoke_from_synthetic_bag() -> FactoryResult:

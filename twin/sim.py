@@ -28,8 +28,10 @@ import numpy as np
 
 from engine.runner import Runner, Setpoint
 from engine.spec import SpecError, load
+from factory.mesh_fit import load_asset
 from integrations.config import load_settings
 from integrations.tracing import record_event, span, tracer_ready
+from twin.world import build_scene, rung_label
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
@@ -91,7 +93,10 @@ class SkillDriver:
         q = self._obstacle_qpos
         data.qpos[q : q + 3] = (x, y, TABLE_TOP_Z + float(obstacle["height_m"]) / 2)
         data.qpos[q + 3 : q + 7] = (1.0, 0.0, 0.0, 0.0)
-        model.geom_size[self._obstacle_geom][:2] = (float(obstacle["width_m"]) / 2, float(obstacle["height_m"]) / 2)
+        # A mesh obstacle was already scaled to the measured size on disk, and
+        # geom_size means nothing for a mesh geom — only the primitive resizes.
+        if obstacle.get("geom") != "mesh":
+            model.geom_size[self._obstacle_geom][:2] = (float(obstacle["width_m"]) / 2, float(obstacle["height_m"]) / 2)
         model.geom_friction[self._obstacle_geom][0] = float(obstacle["friction"])
         if obstacle["mass_kg"] is not None:
             model.body_mass[self._obstacle_body] = float(obstacle["mass_kg"])
@@ -129,6 +134,7 @@ def _overlay(
     *,
     prompt_state: str = "IDLE",
     factory_busy: bool = False,
+    geometry: str = "rung 3: primitive cylinder",
 ) -> None:
     tag = "YES" if result.tag_seen else "NO"
     cube = f"{world_xy[0]:+.3f}  {world_xy[1]:+.3f}" if world_xy else "--"
@@ -142,8 +148,9 @@ def _overlay(
         (
             mujoco.mjtFontScale.mjFONTSCALE_150,
             mujoco.mjtGridPos.mjGRID_TOPLEFT,
-            "prompt\nfactory\ntag\ncube world\ncube tag\nscale\nlatency",
-            f"{prompt_state}\n{factory_line}\n{tag}\n{cube}\n{raw}\n{tag_cm} cm\n{result.latency_ms:.0f} ms",
+            "prompt\nfactory\ngeom\ntag\ncube world\ncube tag\nscale\nlatency",
+            f"{prompt_state}\n{factory_line}\n{geometry}\n{tag}\n{cube}\n{raw}\n"
+            f"{tag_cm} cm\n{result.latency_ms:.0f} ms",
         )
     )
     if result.frame is None or cv2 is None:
@@ -174,7 +181,11 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = load_settings()
-    model = mujoco.MjModel.from_xml_path(str(SCENE))
+    # A native viewer holds one compiled model for its lifetime, and MuJoCo
+    # compiles meshes in, so the rung is fixed at launch here. The web twin
+    # (twin/live.py) rebuilds and carries state across, which is the live swap.
+    mesh_asset = load_asset()
+    model = mujoco.MjModel.from_xml_path(str(build_scene(mesh_asset)))
     _size_tag_to_env(model, settings.apriltag_size_m)
     data = mujoco.MjData(model)
     data.ctrl[:] = 0.0
@@ -222,6 +233,7 @@ def main() -> None:
         mode = "sim only"
     print(f"twin running  |  {mode}  |  close the MuJoCo window to quit")
     print(f"tag size in .env: {tag_cm} cm  |  tracer: {tracer_ready()}")
+    print(f"obstacle geometry: {rung_label(mesh_asset)}")
     if args.camera:
         print("  keys in THIS terminal: R = record  |  F = factory append  |  S = run skill")
     try:
@@ -249,6 +261,10 @@ def main() -> None:
             f"  factory done in {result.elapsed_ms} ms  |  replay={result.replay.detail}  |  "
             f"spec={result.spec_path.name}"
         )
+        if result.mesh:
+            print(f"  mesh: {result.mesh.label}" + (f" ({'; '.join(result.mesh.reasons)})" if result.mesh.reasons else ""))
+            if result.mesh.rung < 3:
+                print("  restart the twin to load it (the web twin swaps it live)")
         if result.catalog:
             print(
                 f"  scrape: {result.catalog.get('name')} "
@@ -367,6 +383,7 @@ def main() -> None:
                             cv2,
                             prompt_state=prompt_state,
                             factory_busy=busy,
+                            geometry=rung_label(mesh_asset),
                         )
                     except Exception as exc:  # noqa: BLE001
                         if hud_ok:

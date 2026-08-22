@@ -9,7 +9,39 @@ from typing import Any
 from factory.extract import ExtractedParams
 
 
-def build_steps(params: ExtractedParams, catalog: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def avoid_step(
+    params: ExtractedParams,
+    catalog: dict[str, Any],
+    mesh: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The obstacle, fused from all three sources.
+
+    Camera: where it is. Scrape: how big and how heavy. Mesh ladder: what shape
+    — and when that came up empty, ``geom`` stays a cylinder and the rung says
+    so, which is the labelled degradation, not a hidden one.
+    """
+    step: dict[str, Any] = {
+        "op": "avoid",
+        "at": list(params.obstacle_xy),
+        "geom": "mesh" if mesh else "cylinder",
+        "width_cm": catalog.get("width_cm", 7),
+        "height_cm": catalog.get("height_cm", 20),
+        "material": catalog.get("material", "plastic"),
+        "mesh_rung": int(mesh["rung"]) if mesh else 3,
+    }
+    if catalog.get("weight_g"):
+        step["weight_g"] = catalog["weight_g"]
+    if mesh:
+        step["density_kg_m3"] = float(mesh["density_kg_m3"])
+        step["mesh_source"] = str(mesh.get("source", "web"))
+    return step
+
+
+def build_steps(
+    params: ExtractedParams,
+    catalog: dict[str, Any] | None = None,
+    mesh: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = []
     if params.motion == "pick_and_place":
         steps.extend(
@@ -33,17 +65,7 @@ def build_steps(params: ExtractedParams, catalog: dict[str, Any] | None = None) 
         )
 
     if params.obstacle_xy and catalog:
-        steps.append(
-            {
-                "op": "avoid",
-                "at": list(params.obstacle_xy),
-                "geom": "cylinder",
-                "width_cm": catalog.get("width_cm", 7),
-                "height_cm": catalog.get("height_cm", 20),
-                "material": catalog.get("material", "plastic"),
-                **({"weight_g": catalog["weight_g"]} if catalog.get("weight_g") else {}),
-            }
-        )
+        steps.append(avoid_step(params, catalog, mesh))
     return steps
 
 
@@ -53,6 +75,7 @@ def patch_spec(
     catalog: dict[str, Any] | None = None,
     *,
     append: bool = False,
+    mesh: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     spec_path.parent.mkdir(parents=True, exist_ok=True)
     existing_steps: list[dict[str, Any]] = []
@@ -67,25 +90,17 @@ def patch_spec(
     if append and existing_steps:
         if not (params.obstacle_xy and catalog):
             return {"version": 2, "steps": existing_steps}
-        avoid_step = {
-            "op": "avoid",
-            "at": list(params.obstacle_xy),
-            "geom": "cylinder",
-            "width_cm": catalog.get("width_cm", 7),
-            "height_cm": catalog.get("height_cm", 20),
-            "material": catalog.get("material", "plastic"),
-            **({"weight_g": catalog["weight_g"]} if catalog.get("weight_g") else {}),
-        }
+        new_avoid = avoid_step(params, catalog, mesh)
         if any(
-            step.get("op") == "avoid" and step.get("at") == avoid_step["at"]
+            step.get("op") == "avoid" and step.get("at") == new_avoid["at"]
             for step in existing_steps
         ):
             return {"version": 2, "steps": existing_steps}
-        spec = {"version": 2, "steps": existing_steps + [avoid_step]}
+        spec = {"version": 2, "steps": existing_steps + [new_avoid]}
         spec_path.write_text(json.dumps(spec, indent=2) + "\n")
         return spec
 
-    new_steps = build_steps(params, catalog)
+    new_steps = build_steps(params, catalog, mesh)
     spec = {"version": 2, "steps": existing_steps + new_steps if append else new_steps}
     spec_path.write_text(json.dumps(spec, indent=2) + "\n")
     return spec
