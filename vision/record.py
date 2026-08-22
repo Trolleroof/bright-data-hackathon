@@ -26,7 +26,7 @@ def main() -> int:
     recorder = PhysicalPromptRecorder(tracker)
     last_catalog: dict | None = None
     print("physical prompt recorder")
-    print("  R = start/stop recording (3–12 s)")
+    print("  R = start/stop recording (3–20 s)")
     print("  F = run fast-path factory on last bag")
     print("  ESC / q = quit (HUD window or this terminal)")
     print(f"  tracer: {tracer_ready()}")

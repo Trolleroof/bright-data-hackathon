@@ -57,12 +57,14 @@ def run_fast_path(
 
     catalog = None
     mesh_result: MeshLadderResult | None = None
-    # Hands and table clutter look like "not-red" blobs. Only scrape when the
-    # caller asked for Run B (append / explicit label), not on every pick.
-    want_obstacle = append or scrape_label is not None
-    if params.obstacle_xy and want_obstacle:
+    # Skill A (plain R / no --label) must never hit Bright Data. Hands, sleeves,
+    # and table clutter look like not-red blobs, so obstacle_xy is not enough.
+    # Only Run B (F / --append) or an explicit scrape_label may look up the web.
+    want_scrape = append or scrape_label is not None
+    if want_scrape and params.obstacle_xy:
         label = scrape_label or params.obstacle_label or "water bottle"
-        with span("scrape", label=label):
+        print(f"  scrape started  |  label={label!r}", flush=True)
+        with span("scrape", label=label, sponsor="Bright Data"):
             catalog = lookup(label)
             record_event(
                 "scrape_result",
@@ -88,12 +90,25 @@ def run_fast_path(
                 label=mesh_result.label,
                 scale_source=(mesh_result.asset or {}).get("scale_source", "none"),
             )
+    else:
+        with span(
+            "scrape",
+            status="bypassed_for_skill_a",
+            sponsor="Bright Data",
+            required=False,
+            obstacle_seen=params.obstacle_xy is not None,
+        ):
+            pass
+        print(
+            "  scrape skipped  |  skill A (press F to append obstacle + Bright Data)",
+            flush=True,
+        )
 
     with span("patch_spec", spec_path=str(spec_path), append=append):
         spec = patch_spec(
             params,
             spec_path,
-            catalog,
+            catalog if want_scrape else None,
             append=append,
             mesh=mesh_result.asset if mesh_result else None,
         )

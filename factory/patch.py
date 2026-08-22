@@ -8,8 +8,7 @@ from typing import Any
 
 from factory.extract import ExtractedParams
 
-SIM_PICK_XY = (0.05, 0.02)
-SIM_PLACE_XY = (0.12, 0.08)
+SIM_TAG_ORIGIN_XY = (-0.32, 0.22)
 
 
 def avoid_step(
@@ -47,16 +46,18 @@ def build_steps(
 ) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = []
     if params.motion == "pick_and_place":
-        # ponytail: fixed SO-101 demo workspace; calibrate tag-to-arm extrinsics
-        # when physical and simulated table frames need to match metrically.
+        start = [a + b for a, b in zip(SIM_TAG_ORIGIN_XY, params.start)]
+        end = [a + b for a, b in zip(SIM_TAG_ORIGIN_XY, params.end)]
+        # ponytail: the tag origin is fixed in scene.xml; read it from calibration
+        # when the simulated tag becomes movable.
         steps.extend(
             [
-                {"op": "approach", "at": list(SIM_PICK_XY), "height_cm": 8, "duration_s": 0.8},
-                {"op": "approach", "at": list(SIM_PICK_XY), "height_cm": 2.5, "duration_s": 0.5},
-                {"op": "grasp"},
-                {"op": "place", "at": [*SIM_PLACE_XY, 0], "duration_s": 1.2},
+                {"op": "approach", "at": start, "height_cm": 8, "duration_s": 0.8},
+                {"op": "approach", "at": start, "height_cm": 1.5, "duration_s": 0.5},
+                {"op": "grasp", "duration_s": 0.4},
+                {"op": "place", "at": [*end, 0], "duration_s": 1.2},
                 {"op": "release"},
-                {"op": "approach", "at": list(SIM_PLACE_XY), "height_cm": 8, "duration_s": 0.5},
+                {"op": "approach", "at": end, "height_cm": 8, "duration_s": 0.5},
             ]
         )
     elif params.motion == "replay_trajectory":

@@ -4,7 +4,7 @@ Default: sim only. With --camera, track_cube runs: the AprilTag anchors the
 table, the red blob is the cube, and the cube stays planted while you walk the
 camera around. Keys in this terminal (not the MuJoCo window):
 
-  R  start/stop recording (~3–12 s pick-and-place) → fast-path factory on stop
+  R  start/stop recording (~3–20 s pick-and-place) → fast-path factory on stop
   F  append avoid step from last bag (Run B)
   S  approve + run the skill spec in sim
 """
@@ -35,7 +35,9 @@ from twin.world import resolve_scene, rung_label
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
-CUBE_HALF = 0.025
+CUBE_HALF = 0.015
+GRIPPER_OPEN = 0.50
+GRIPPER_CLOSED = 0.15
 HUD_W, HUD_H = 480, 270
 LETTER_TAG_CM = 15.3
 
@@ -88,6 +90,7 @@ class SkillDriver:
         self._arm_qpos = [int(model.jnt_qposadr[joint]) for joint in self._arm_joints]
         self._arm_dof = [int(model.jnt_dofadr[joint]) for joint in self._arm_joints]
         self._gripper = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper")
+        self._latch_offset: np.ndarray | None = None
         # Keep the visual arm from shoving a released cube; the table still
         # collides with it and keeps it on the tabletop.
         robot_geoms = np.flatnonzero(model.geom_group == 3)
@@ -147,9 +150,21 @@ class SkillDriver:
                 )
             mujoco.mj_forward(model, data)
         data.ctrl[:5] = data.qpos[self._arm_qpos]
-        data.ctrl[self._gripper] = 0.0 if setpoint.attached else 0.35
+        data.ctrl[self._gripper] = GRIPPER_CLOSED if setpoint.attached else GRIPPER_OPEN
         self._obstacle(model, data, setpoint.obstacle)
-        if setpoint.attached or setpoint.op in {"replay_trajectory", "goto"}:
+        if setpoint.op == "grasp" and self._latch_offset is None:
+            self._latch_offset = data.qpos[self._cube_qpos : self._cube_qpos + 3].copy() - data.site_xpos[self._ee]
+        if setpoint.attached and self._latch_offset is not None:
+            cube_xyz = data.site_xpos[self._ee] + self._latch_offset
+            self._cube(
+                data,
+                float(cube_xyz[0]),
+                float(cube_xyz[1]),
+                float(cube_xyz[2] - TABLE_TOP_Z - CUBE_HALF),
+            )
+        elif setpoint.op == "release":
+            self._latch_offset = None
+        elif setpoint.op in {"replay_trajectory", "goto"}:
             self._cube(data, setpoint.x, setpoint.y, setpoint.z)
         mujoco.mj_forward(model, data)
 
@@ -336,7 +351,11 @@ def main() -> None:
                 print("  factory already running")
                 return
             factory_busy = True
-        print(f"  factory started  |  bag={bag_path.name}  |  append={append}", flush=True)
+        print(
+            f"  factory started  |  bag={bag_path.name}  |  append={append}  |  "
+            f"scrape={'on' if append else 'off'}",
+            flush=True,
+        )
 
         def _work() -> None:
             nonlocal factory_busy
@@ -373,7 +392,9 @@ def main() -> None:
                     world_xy = anchor.apply(data, result.cube_xy)
 
                 if recorder is not None and result is not None and recorder.state is PromptState.RECORDING:
-                    recorder.sample(result)
+                    state = recorder.sample(result)
+                    if state is PromptState.PROMPTED and recorder.last_bag_path:
+                        _run_factory(Path(recorder.last_bag_path))
 
                 if runner is not None and driver is not None and skill_active and not runner.finished:
                     setpoint = runner.tick(data.time)

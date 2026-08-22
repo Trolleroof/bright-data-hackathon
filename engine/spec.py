@@ -40,8 +40,8 @@ def _point3(value: Any, name: str) -> tuple[float, float, float]:
     return float(value[0]), float(value[1]), float(value[2])
 
 
-def _duration(step: dict[str, Any], index: int) -> float:
-    duration = step.get("duration_s", 1.0)
+def _duration(step: dict[str, Any], index: int, default: float = 1.0) -> float:
+    duration = step.get("duration_s", default)
     if not isinstance(duration, (int, float)) or duration <= 0:
         raise SpecError(f"steps[{index}].duration_s must be positive")
     return float(duration)
@@ -74,9 +74,13 @@ def _validate_step(step: Any, index: int) -> dict[str, Any]:
         return {"op": op, "at": _point(step.get("at"), f"steps[{index}].at"), "z": float(height_cm) / 100, "duration_s": _duration(step, index)}
     if op == "place":
         return {"op": op, "at": _point3(step.get("at"), f"steps[{index}].at"), "duration_s": _duration(step, index)}
-    if op in {"grasp", "release"}:
+    if op == "grasp":
+        if set(step) - {"op", "duration_s"}:
+            raise SpecError(f"steps[{index}].grasp only accepts duration_s")
+        return {"op": op, "duration_s": _duration(step, index, 0.4)}
+    if op == "release":
         if set(step) != {"op"}:
-            raise SpecError(f"steps[{index}].{op} takes no parameters")
+            raise SpecError(f"steps[{index}].release takes no parameters")
         return {"op": op}
     if op == "avoid":
         geom = step.get("geom", "cylinder")

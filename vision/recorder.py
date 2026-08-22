@@ -1,4 +1,4 @@
-"""Record ~3–12 s of table-frame cube motion into a prompt bag."""
+"""Record ~3–20 s of table-frame cube motion into a prompt bag."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class PromptState(str, Enum):
 @dataclass
 class RecorderConfig:
     min_duration_s: float = 3.0
-    max_duration_s: float = 12.0
+    max_duration_s: float = 20.0
     min_frames: int = 10
 
 

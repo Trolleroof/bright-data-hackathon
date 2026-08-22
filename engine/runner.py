@@ -86,8 +86,8 @@ class Runner:
         elif step["op"] == "grasp":
             self._attached = True
             start = end = self._position
-            duration = 0.0
-            progress = 1.0
+            duration = step["duration_s"]
+            progress = min(1.0, elapsed / duration)
         elif step["op"] == "release":
             released = self._attached
             self._attached = False
