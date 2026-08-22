@@ -21,6 +21,19 @@ class Settings:
     brightdata_collector_id: str
     brightdata_catalog_url: str
     apriltag_size_cm: str
+    camera_index: int
+    camera_fov_deg: float
+    camera_width: int
+    camera_height: int
+    cube_track_height_cm: float
+
+    @property
+    def apriltag_size_m(self) -> float:
+        """Tag size in metres. 0.0 means .env has no APRILTAG_SIZE_CM."""
+        try:
+            return float(self.apriltag_size_cm) / 100.0
+        except ValueError:
+            return 0.0
 
     @property
     def signoz_ready(self) -> bool:
@@ -33,6 +46,20 @@ class Settings:
     @property
     def brightdata_ready(self) -> bool:
         return bool(self.brightdata_api_token and self.brightdata_collector_id)
+
+
+def _int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, "").strip() or default)
+    except ValueError:
+        return default
+
+
+def _float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, "").strip() or default)
+    except ValueError:
+        return default
 
 
 def load_settings() -> Settings:
@@ -51,4 +78,9 @@ def load_settings() -> Settings:
             "https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/",
         ).strip(),
         apriltag_size_cm=os.getenv("APRILTAG_SIZE_CM", "").strip(),
+        camera_index=_int("CAMERA_INDEX", 0),
+        camera_fov_deg=_float("CAMERA_FOV_DEG", 60.0),
+        camera_width=_int("CAMERA_WIDTH", 1280),
+        camera_height=_int("CAMERA_HEIGHT", 720),
+        cube_track_height_cm=_float("CUBE_TRACK_HEIGHT_CM", 2.5),
     )
