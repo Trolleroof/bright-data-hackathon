@@ -1,0 +1,20 @@
+{
+  "identifier": "physical_prompt",
+  "title": "Physical Prompt",
+  "icon": "Camera",
+  "description": "A 3-12s table recording. This is the ticket input.",
+  "schema": {
+    "properties": {
+      "status": {
+        "title": "Status",
+        "type": "string",
+        "enum": ["IDLE", "RECORDING", "PROMPTED"],
+        "default": "IDLE"
+      },
+      "duration_s": { "title": "Duration (s)", "type": "number" },
+      "run_id": { "title": "Run id", "type": "string" }
+    },
+    "required": []
+  },
+  "relations": {}
+}

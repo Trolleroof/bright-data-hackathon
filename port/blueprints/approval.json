@@ -1,0 +1,25 @@
+{
+  "identifier": "approval",
+  "title": "Approval",
+  "icon": "Unlocked",
+  "description": "Human tap in Port. Twin stays live while this is up.",
+  "schema": {
+    "properties": {
+      "decision": {
+        "title": "Decision",
+        "type": "string",
+        "enum": ["pending", "approved", "rejected"],
+        "default": "pending"
+      }
+    },
+    "required": []
+  },
+  "relations": {
+    "run": {
+      "title": "Factory run",
+      "target": "factory_run",
+      "required": false,
+      "many": false
+    }
+  }
+}

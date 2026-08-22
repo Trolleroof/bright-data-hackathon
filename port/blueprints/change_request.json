@@ -1,0 +1,26 @@
+{
+  "identifier": "change_request",
+  "title": "Change Request",
+  "icon": "Alert",
+  "description": "Opened when a physical prompt ends. You do not type this.",
+  "schema": {
+    "properties": {
+      "stage": {
+        "title": "Stage",
+        "type": "string",
+        "enum": ["prompt", "plan", "scrape", "edit", "test", "approve", "release"],
+        "default": "prompt"
+      },
+      "summary": { "title": "Summary", "type": "string" }
+    },
+    "required": []
+  },
+  "relations": {
+    "prompt": {
+      "title": "Prompt",
+      "target": "physical_prompt",
+      "required": false,
+      "many": false
+    }
+  }
+}

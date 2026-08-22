@@ -1,0 +1,26 @@
+{
+  "identifier": "factory_run",
+  "title": "Factory Run",
+  "icon": "Deployment",
+  "description": "One compile of a prompt into a scripted skill.",
+  "schema": {
+    "properties": {
+      "skill": { "title": "Skill", "type": "string" },
+      "status": {
+        "title": "Status",
+        "type": "string",
+        "enum": ["pending", "running", "passed", "failed"],
+        "default": "pending"
+      }
+    },
+    "required": []
+  },
+  "relations": {
+    "change_request": {
+      "title": "Change request",
+      "target": "change_request",
+      "required": false,
+      "many": false
+    }
+  }
+}

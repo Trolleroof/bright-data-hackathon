@@ -1,0 +1,29 @@
+{
+  "identifier": "scraper_job",
+  "title": "Scraper Job",
+  "icon": "Database",
+  "description": "Bright Data job. Twin needs name + size JSON.",
+  "schema": {
+    "properties": {
+      "catalog_url": { "title": "Catalog URL", "type": "string", "format": "url" },
+      "status": {
+        "title": "Status",
+        "type": "string",
+        "enum": ["idle", "running", "ok", "broken", "repaired"],
+        "default": "idle"
+      },
+      "object_name": { "title": "Object name", "type": "string" },
+      "width_cm": { "title": "Width (cm)", "type": "number" },
+      "height_cm": { "title": "Height (cm)", "type": "number" }
+    },
+    "required": []
+  },
+  "relations": {
+    "run": {
+      "title": "Factory run",
+      "target": "factory_run",
+      "required": false,
+      "many": false
+    }
+  }
+}

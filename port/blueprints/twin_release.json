@@ -1,0 +1,21 @@
+{
+  "identifier": "twin_release",
+  "title": "Twin Release",
+  "icon": "DefaultProperty",
+  "description": "Hot-swap of a compiled skill. Camera loop never stops.",
+  "schema": {
+    "properties": {
+      "skill": { "title": "Skill", "type": "string" },
+      "composed": { "title": "Composed", "type": "boolean", "default": false }
+    },
+    "required": []
+  },
+  "relations": {
+    "approval": {
+      "title": "Approval",
+      "target": "approval",
+      "required": false,
+      "many": false
+    }
+  }
+}

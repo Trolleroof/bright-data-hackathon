@@ -1,0 +1,20 @@
+# Bright Data Scraper Studio settings for ScaleTwin.
+# The camera does not classify objects. This file aims the scraper.
+
+collector_id_env: BRIGHTDATA_COLLECTOR_ID
+catalog_url_env: BRIGHTDATA_CATALOG_URL
+
+# Demo contract: you put down a water bottle. This page supplies name + size.
+default_catalog_url: https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/
+
+# Fields the factory will require later. Setup only checks they exist in JSON.
+required_fields:
+  - name
+  - height_cm
+  - width_cm
+
+# Selectors live here so scraper-repair can edit them later (not used in setup).
+selectors:
+  name: "h1"
+  height_cm: "[data-measurement='height']"
+  width_cm: "[data-measurement='width']"

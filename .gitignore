@@ -1,0 +1,46 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Project outputs (recordings, replay bags, scraped JSON dumps)
+outputs/
+recordings/
+replay/
+*.bag
+*.mcap
+
+# MuJoCo / sim artifacts
+*.mjcf.bak
+MUJOCO_LOG.TXT
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+.python-version
+
+# Logs
+*.log
