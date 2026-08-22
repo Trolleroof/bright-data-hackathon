@@ -229,27 +229,33 @@ def lookup(label: str, settings: Settings | None = None) -> dict[str, Any]:
             query = settings.brightdata_catalog_url or rules["search_query_template"].format(label=label)
             urls = search(query, settings) if not settings.brightdata_catalog_url else [settings.brightdata_catalog_url]
             last_error: Exception | None = None
-            candidates: list[tuple[int, str, dict[str, Any], list[str]]] = []
+            candidates: list[tuple[int, int, str, dict[str, Any], list[str]]] = []
             for url in urls or [rules["fallback_catalog_url"]]:
                 try:
                     html = fetch(url, settings)
                     fields, has_product_schema = _extract_page(html, rules)
                     missing_required = [f for f in rules["required_fields"] if not fields.get(f)]
-                    if not missing_required:
-                        candidates.append((int(has_product_schema), url, fields, missing_required))
+                    # A page that carries some of the required fields still beats the
+                    # fixture: keep it and backfill the rest below.
+                    if len(missing_required) < len(rules["required_fields"]):
+                        candidates.append(
+                            (-len(missing_required), int(has_product_schema), url, fields, missing_required)
+                        )
                 except (requests.RequestException, BrightDataError) as exc:
                     last_error = exc
                     continue
             if candidates:
-                _, url, fields, missing_required = max(candidates, key=lambda candidate: candidate[0])
+                _, _, url, fields, missing_required = max(candidates, key=lambda c: c[:2])
+                backfilled = {field: fixture[field] for field in missing_required if field in fixture}
                 return {
+                    **backfilled,
                     **fields,
                     "source": "live",
                     "url": url,
                     "latency_ms": round((time.monotonic() - started) * 1000, 1),
-                    "backfilled_fields": missing_required,
+                    "backfilled_fields": sorted(backfilled),
                 }
-            raise last_error or BrightDataError("no candidate URL produced complete product fields")
+            raise last_error or BrightDataError("no candidate URL produced any required product field")
         except (requests.RequestException, BrightDataError):
             pass  # falls through to the labeled fixture below
 
