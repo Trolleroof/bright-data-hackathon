@@ -23,6 +23,7 @@ def main() -> int:
     settings = load_settings()
     camera, tracker = build_tracker()
     recorder = PhysicalPromptRecorder(tracker)
+    last_catalog: dict | None = None
     print("physical prompt recorder")
     print("  R = start/stop recording (3–12 s)")
     print("  F = run fast-path factory on last bag")
@@ -33,7 +34,7 @@ def main() -> int:
             result = tracker.step()
             if recorder.state is PromptState.RECORDING:
                 recorder.sample(result)
-            frame = hud.draw(result, prompt_state=recorder.state.value)
+            frame = hud.draw(result, prompt_state=recorder.state.value, catalog=last_catalog)
             if frame is not None:
                 cv2.imshow("Bidex — record", frame)
             key = cv2.waitKey(1) & 0xFF
@@ -44,12 +45,16 @@ def main() -> int:
                 print(f"  prompt={state.value}")
                 if state is PromptState.PROMPTED and recorder.last_bag_path:
                     factory = run_fast_path(Path(recorder.last_bag_path))
+                    if factory.catalog is not None:
+                        last_catalog = factory.catalog
                     print(
                         f"  factory done in {factory.elapsed_ms} ms  |  "
                         f"replay={factory.replay.detail}  |  spec={factory.spec_path}"
                     )
             if key in (ord("f"), ord("F")) and recorder.last_bag_path:
                 factory = run_fast_path(Path(recorder.last_bag_path), append=True)
+                if factory.catalog is not None:
+                    last_catalog = factory.catalog
                 print(
                     f"  factory append in {factory.elapsed_ms} ms  |  "
                     f"replay={factory.replay.detail}"
