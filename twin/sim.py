@@ -35,7 +35,7 @@ from twin.world import resolve_scene, rung_label
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
-CUBE_HALF = 0.015
+CUBE_HALF = 0.010
 GRIPPER_OPEN = 0.50
 GRIPPER_CLOSED = 0.15
 HUD_W, HUD_H = 480, 270
@@ -163,6 +163,7 @@ class SkillDriver:
                 float(cube_xyz[2] - TABLE_TOP_Z - CUBE_HALF),
             )
         elif setpoint.op == "release":
+            self._cube(data, setpoint.x, setpoint.y, 0.0)
             self._latch_offset = None
         elif setpoint.op in {"replay_trajectory", "goto"}:
             self._cube(data, setpoint.x, setpoint.y, setpoint.z)
@@ -397,7 +398,7 @@ def main() -> None:
                         _run_factory(Path(recorder.last_bag_path))
 
                 if runner is not None and driver is not None and skill_active and not runner.finished:
-                    setpoint = runner.tick(data.time)
+                    setpoint = runner.tick(time.monotonic())
                     if setpoint is not None:
                         driver.apply(model, data, setpoint)
                     if runner.finished:

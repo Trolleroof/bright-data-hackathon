@@ -1,154 +1,98 @@
-# Bidex — setup
+# Bidex
 
-Twin window + Port / Bright Data stubs and local OpenTelemetry tracing. Demo loop is not built yet.
+Show a table move once. The twin learns it and keeps running.
+
+The camera sees **where** things are, not **what** they are or **how big** they are. Bright Data fills that from the live web. Port turns the recording into a shipped skill — no typed ticket.
+
+```
+R record → factory → (F: Bright Data + avoid) → Port sync → replay → S play
+```
+
+Missing sponsor keys = that step skips. The twin still opens.
+
+---
+
+## Bright Data — web eyes (Run B only)
+
+A not-red blob is just `(x, y)`. Bright Data turns a label like `"water bottle"` into physics the twin can use.
+
+| Call | API | Returns | When |
+|---|---|---|---|
+| `search()` | SERP zone | product / mesh URLs | `F` |
+| `fetch()` | Web Unlocker | HTML past anti-bot walls | `F` |
+| `extract()` | local | `{name, width_cm, height_cm, weight_g, material}` | after fetch |
+| mesh ladder | SERP + Unlocker | `.glb` / `.stl` from web | after scrape |
+
+Skill A (`R` only) **never** scrapes — hands look like obstacles. Press **`F`** for Run B. Fixture fallback is labelled on the HUD, never silent.
+
+---
+
+## Port — job board for a physical prompt
+
+Each factory run writes a linked graph in Port (`sync_fast_path_run`):
+
+| Blueprint | What it is |
+|---|---|
+| `physical_prompt` | the bag — ticket opens when you stop recording |
+| `change_request` | stage + summary (`pick_and_place -> PASS in 12 ms`) |
+| `factory_run` | skill + pass/fail |
+| `scraper_job` | **Run B only** — catalog URL + dimensions from Bright Data |
+| `approval` | replay exam result |
+| `twin_release` | hot-swapped spec (only if replay passed) |
+
+Replay fail ⇒ no release. No Port keys ⇒ factory still runs locally.
+
+---
+
+## Setup
 
 ```bash
-cd /Users/nikhi/zero-downtime-hackathon
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python scripts/check_setup.py
-python -m twin.sim
 ```
 
-## Camera → cube (`track_cube`)
+Print `print/apriltag_36h11_id0_letter.png` at **100%**. Tape flat. Measure outer black square → `APRILTAG_SIZE_CM` (letter print = 15.3 cm).
 
-One AprilTag (36h11, id 0) taped flat to the table is the origin. Red = cube.
-Every frame: detect the tag, back-project the red blob onto the table plane,
-write the result onto the cube in MuJoCo. Walk the camera, the cube stays put.
+---
+
+## Demo loop
 
 ```bash
-python scripts/check_vision.py    # geometry proof, no camera needed
-python -m vision.track            # camera + HUD (tag seen / cube x,y / latency)
-mjpython -m twin.sim --camera     # twin + track + record + factory + skill
+mjpython -m twin.sim --camera
 ```
 
-Measure the outer black square of the printed tag and put it in `.env` as
-`APRILTAG_SIZE_CM` — that is the only scale the pipeline has. Optional camera
-tuning (`CAMERA_INDEX`, `CAMERA_FOV_DEG`, `CUBE_TRACK_HEIGHT_CM`) is in
-`.env.example`. macOS will ask for camera permission the first time.
-
-With `--camera`, keys go in **this terminal** (not the MuJoCo window):
+Keys in **this terminal**, not the MuJoCo window:
 
 | Key | Action |
 |---|---|
-| `R` | Start/stop recording (~3–20 s pick-and-place) → fast-path factory on stop |
-| `F` | Append avoid step from last bag (Run B) |
-| `S` | Run the skill spec in sim (after factory PASS) |
+| `R` | Record 3–20 s → factory. No Bright Data. |
+| `F` | Run B: scrape blob, append `avoid`, Port `scraper_job`. |
+| `S` | Play `outputs/skill_spec.json`. |
 
-Missing sponsor keys = that row says skipped. The sim still opens.
+Headless proofs: `python scripts/check_vision.py`, `run_factory.py --smoke`, `run_skill.py`, `twin.sim --skill`.
 
-## Everything in one browser tab
+---
 
-`web/` is the mission-control UI: the MuJoCo twin, the live camera feed, the
-cube telemetry, and the local trace waterfall side by side. The twin is
-rendered headless (`twin/live.py`) and the camera runs `track_cube` in the
-background (`vision/live.py`); both are pushed to the browser as MJPEG, so
-there is no native window to arrange and no viewer to keep alive.
-
-Two processes. Python owns MuJoCo and OpenCV, Next.js owns the UI:
+## Browser
 
 ```bash
-python web/server.py --twin --camera   # port 8080: twin render, camera, traces
-cd web && npm install && npm run dev   # port 3000: open this one
+python web/server.py --twin --camera    # :8080
+cd web && npm install && npm run dev    # :3000
 ```
 
-`--twin` and `--camera` just pre-warm the services — the **LIVE OPS** tab can
-start and stop both itself. That tab gives you:
+**LIVE OPS** — twin + camera. **FLIGHT RECORDER** — trace waterfall + check runner.
 
-| Control | What it does |
-|---|---|
-| cube source | `track_cube` (camera drives the cube), `skill engine` (replays `outputs/skill_spec.json`), or `idle` |
-| view | operator / overhead / front / wide camera presets on the headless render |
-| replay | resets the world to t=0 and re-runs the current spec |
-| start/stop twin, start/stop camera | bring either service up or down without restarting anything |
+---
 
-The table map underneath plots all three readings in one frame: where the twin
-holds the cube, where the camera says it is, and where the skill cursor is. Edit
-`outputs/skill_spec.json` while the tab is open and the hot-swap counter ticks —
-that is the zero-downtime claim, visible.
-
-The **FLIGHT RECORDER** tab includes a **CHECK RUNNER** dock at the bottom.
-It runs `check_setup`, `check_vision`, `run_skill`, and `run_factory --smoke`
-headless — one at a time or all four via **RUN ALL** — and streams stdout live
-with per-check PASS/FAIL and timings. Camera entry points (`mjpython -m twin.sim
---camera`) stay terminal-only because they need the native viewer.
-
-Without the Python service the UI still loads and says so; the trace waterfall
-falls back to its canonical demo traces. Point the UI at a backend on another
-host with `BIDEX_BACKEND_URL`.
-
-No camera permission, no printed tag, or no `APRILTAG_SIZE_CM` — the camera
-panel reports exactly which one, and the twin keeps running.
-
-## First-pass skill replay
-
-`outputs/skill_spec.json` is the hot-swappable, version-2 recipe. It supports
-`replay_trajectory`, `goto`, and the kinematic `approach` → `grasp`
-→ `place` → `release` chain. Validate it without a camera or viewer:
-
-```bash
-python scripts/run_skill.py
-```
-
-Trajectory times are seconds and must start at zero. A `goto` uses `start`,
-`end`, and optional `duration_s` (one second by default). The runner watches
-the file and applies a changed spec at a step boundary.
-
-Open the simulated pick-and-place run with:
-
-```bash
-python -m twin.sim --skill
-```
-
-The blue cursor is the skill engine's table-frame end-effector target. This is
-kinematic cube motion; the parked visual arm does not yet have an IK solver.
-
-## Obstacle geometry: the three-rung ladder
-
-You cannot type a mesh. A downloaded mesh has shape but no scale and no mass,
-which is normally what makes web assets useless for physics — and it is exactly
-what the other two sources already have. The camera gives real centimetres and
-a position on the table, the scrape gives mass and material, the web gives
-shape. The obstacle in the twin is all three at once.
-
-| Rung | Geometry | Where it comes from |
-|---|---|---|
-| 1 | the exact product | the `.glb`/`.usdz` behind "View in your room" on its own page |
-| 2 | a category mesh | Bright Data SERP across Thingiverse, Printables, Sketchfab, open web |
-| 3 | primitive cylinder | scraped dimensions — what we shipped before |
-
-Rung 3 is a labelled degradation, not a failure: the rung is printed in the
-twin HUD and shown as **obstacle geom** in LIVE OPS, so what fired is visible
-rather than claimed.
-
-```bash
-python scripts/check_mesh.py                          # offline proof, no keys
-python scripts/check_mesh.py --live --label "water bottle"
-```
-
-Discovery is a search problem, which is why it goes through Bright Data and
-across several sources — one curated dataset would have needed no search at
-all. The binary download itself is a plain GET: the anti-bot wall is in front
-of the page, not the CDN file.
-
-`fit()` does the unglamorous part: recentre on the bounding box, stand the long
-axis up (sources disagree about which way is up), rescale to the measured
-height, decimate a collision copy while the high-poly one stays visual-only,
-and set density from the scraped mass over the now-real volume. It also reports
-the width residual — the mesh's own width against the scraped one — because
-that gap is the honest error bar on the fusion.
-
-MuJoCo compiles meshes into the model, so the web twin swaps geometry by
-rebuilding the world and carrying `qpos`/`qvel` across; the stream never drops
-and **mesh swaps** ticks up. The native `python -m twin.sim` viewer holds one
-compiled model for its lifetime, so it picks the rung up at launch instead.
-
-Fill `.env` when you have them:
+## Keys
 
 | Key | Where |
 |---|---|
-| `PORT_CLIENT_ID`, `PORT_CLIENT_SECRET` | Port → profile → Credentials |
-| `BRIGHTDATA_API_TOKEN`, `BRIGHTDATA_SERP_ZONE`, `BRIGHTDATA_UNLOCKER_ZONE` | Bright Data → API token + a SERP zone + a Web Unlocker zone |
-| `APRILTAG_SIZE_CM` | ruler, outer black square after you tape the tag |
+| `PORT_CLIENT_ID`, `PORT_CLIENT_SECRET` | Port → Credentials |
+| `BRIGHTDATA_API_TOKEN` | Bright Data → API token |
+| `BRIGHTDATA_SERP_ZONE`, `BRIGHTDATA_UNLOCKER_ZONE` | Proxies & Scraping → zone names |
+| `APRILTAG_SIZE_CM` | ruler, after taping tag |
+
+Optional: `BRIGHTDATA_CATALOG_URL` — skip search, unlock one page only.

@@ -43,6 +43,7 @@ const OFFLINE: LiveState = {
     height: 0,
     frames: 0,
     prompt_state: 'IDLE',
+    recording_skill: null,
     detection: null,
   },
   object_import: {

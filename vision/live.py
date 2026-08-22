@@ -32,6 +32,7 @@ class CameraState:
     height: int = 0
     frames: int = 0
     prompt_state: str = "IDLE"
+    recording_skill: str | None = None
     detection: dict[str, Any] | None = None
 
     def as_json(self) -> dict[str, Any]:
@@ -52,6 +53,9 @@ class LiveCamera:
         self._state = CameraState()
         self._camera = None
         self._tracker = None
+        self._recorder = None
+        self._latest = None
+        self._recording_skill: str | None = None
         self._prompt_state = "IDLE"
         self._frame_event = threading.Event()
         self._detection = None
@@ -73,7 +77,10 @@ class LiveCamera:
             except Exception as exc:  # noqa: BLE001 — a missing webcam must not 500 the UI
                 self._state = CameraState(running=False, error=str(exc))
                 return self._state
+            from vision.recorder import PhysicalPromptRecorder  # noqa: PLC0415
+
             self._camera, self._tracker = camera, tracker
+            self._recorder = PhysicalPromptRecorder(tracker)
             self._state = CameraState(
                 running=True, width=camera.width, height=camera.height
             )
@@ -96,13 +103,50 @@ class LiveCamera:
                 pass
         self._camera = None
         self._tracker = None
+        self._recorder = None
+        self._latest = None
+        self._recording_skill = None
         with self._lock:
             self._state.running = False
             self._jpeg = None
         return self._state
 
-    def set_prompt_state(self, prompt_state: str) -> None:
-        self._prompt_state = prompt_state
+    def toggle_recording(self, skill: str) -> tuple[str, str | None, str | None]:
+        """Start or stop the real camera recorder; returns state, bag, skill."""
+        from vision.recorder import PromptState  # noqa: PLC0415
+
+        factory_input: tuple[str, str] | None = None
+        with self._lock:
+            if self._recorder is None or self._latest is None:
+                raise RuntimeError("camera needs a frame before recording")
+            if self._recorder.state is PromptState.RECORDING:
+                state = self._recorder.stop(self._latest)
+                bag_path = self._recorder.last_bag_path
+                recorded_skill = self._recording_skill
+                if state is PromptState.PROMPTED and bag_path and recorded_skill:
+                    factory_input = (bag_path, recorded_skill)
+            else:
+                state = self._recorder.start()
+                self._recording_skill = skill
+                bag_path = None
+                recorded_skill = skill
+        if factory_input:
+            self._start_factory(*factory_input)
+            with self._lock:
+                self._recorder.last_bag_path = None
+        return state.value, bag_path, recorded_skill
+
+    @staticmethod
+    def _start_factory(bag_path: str, skill: str) -> None:
+        def _run() -> None:
+            try:
+                from factory.fast_path import run_fast_path
+
+                run_fast_path(bag_path, append=skill == "B")
+            except Exception as exc:  # noqa: BLE001 - the recording stays on disk
+                print(f"  recording factory failed: {exc}", flush=True)
+
+        threading.Thread(target=_run, name="recording-factory", daemon=True).start()
 
     @property
     def detection(self):  # noqa: ANN201 — Detection or None, consumed by the import flow
@@ -118,8 +162,6 @@ class LiveCamera:
         from vision.detect import detect_object  # noqa: PLC0415
 
         frames = 0
-        # The bounding-box pass is heavier than the tracker and nobody needs it
-        # at frame rate: an object that appears is still there 200 ms later.
         detect_period_s = 0.2
         next_detect = 0.0
         while not self._stop.is_set():
@@ -140,9 +182,26 @@ class LiveCamera:
                     self._detection = None
                 IMPORTER.observe(self._detection)
 
+            with self._lock:
+                self._latest = result
+                if self._recorder is not None and self._recorder.state.value == "RECORDING":
+                    self._recorder.sample(result)
+                prompt_state = self._recorder.state.value if self._recorder else self._prompt_state
+                recording_skill = self._recording_skill
+                bag_path = (
+                    self._recorder.last_bag_path
+                    if prompt_state == "PROMPTED" and self._recorder
+                    else None
+                )
+
+            if bag_path:
+                self._start_factory(bag_path, recording_skill or "A")
+                with self._lock:
+                    self._recorder.last_bag_path = None
+
             frame = hud.draw(
                 result,
-                prompt_state=self._prompt_state,
+                prompt_state=prompt_state,
                 detection=self._detection,
                 import_state=IMPORTER.state(),
             )
@@ -170,7 +229,8 @@ class LiveCamera:
                     width=self._camera.width if self._camera else 0,
                     height=self._camera.height if self._camera else 0,
                     frames=frames,
-                    prompt_state=self._prompt_state,
+                    prompt_state=prompt_state,
+                    recording_skill=recording_skill,
                     detection=self._detection.as_json() if self._detection else None,
                 )
             self._frame_event.set()

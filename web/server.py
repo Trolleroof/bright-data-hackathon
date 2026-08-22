@@ -282,8 +282,18 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
                 CAMERA.start()
             elif action == "stop":
                 CAMERA.stop()
-            elif action == "prompt_state":
-                CAMERA.set_prompt_state(str(payload.get("prompt_state", "IDLE")).upper())
+            elif action == "record":
+                skill = str(payload.get("skill", "A")).upper()
+                if skill not in {"A", "B"}:
+                    self._send_json({"error": "skill must be A or B"}, status=400)
+                    return
+                if not CAMERA.running:
+                    CAMERA.start()
+                try:
+                    prompt_state, bag_path, recorded_skill = CAMERA.toggle_recording(skill)
+                except RuntimeError as exc:
+                    self._send_json({"error": str(exc)}, status=409)
+                    return
             else:
                 self._send_json({"error": f"unknown camera action: {action}"}, status=400)
                 return

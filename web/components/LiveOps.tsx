@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Camera, Loader2, Play, RefreshCw } from 'lucide-react';
+import { Camera, Circle, Loader2, Play, RefreshCw, Square } from 'lucide-react';
 import { LiveState } from '@/lib/types';
 import { ImportPrompt } from '@/components/ImportPrompt';
 import { MjpegFeed } from '@/components/MjpegFeed';
@@ -50,6 +50,10 @@ export function LiveOps({ live, onToast, onRefresh }: Props) {
     await control({ target: 'twin', action: twin.running ? 'configure' : 'start', source: 'skill' }, 'Skill source selected');
     await control({ target: 'twin', action: 'reset' }, 'Skill replay started');
   };
+  const record = (skill: 'A' | 'B') => control(
+    { target: 'camera', action: 'record', skill },
+    camera.prompt_state === 'RECORDING' ? `Skill ${camera.recording_skill} recording stopped` : `Skill ${skill} recording started`
+  );
 
   return <section className="border-b border-obsidian-800 p-5">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -70,6 +74,10 @@ export function LiveOps({ live, onToast, onRefresh }: Props) {
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />} Sync camera
         </button>
         <button disabled={busy !== null} onClick={runSkill} className="flex items-center gap-2 rounded-md border border-obsidian-700 px-3 py-2 text-xs font-semibold text-slate-100 disabled:opacity-50"><Play className="h-3.5 w-3.5" /> Run skill</button>
+        {camera.prompt_state === 'RECORDING' ? <button disabled={busy !== null} onClick={() => record(camera.recording_skill || 'A')} className="flex items-center gap-2 rounded-md border border-red-400/60 px-3 py-2 text-xs font-semibold text-red-200 disabled:opacity-50"><Square className="h-3.5 w-3.5" /> Stop Skill {camera.recording_skill}</button> : <>
+          <button disabled={busy !== null} onClick={() => record('A')} className="flex items-center gap-2 rounded-md border border-obsidian-700 px-3 py-2 text-xs font-semibold text-slate-100 disabled:opacity-50"><Circle className="h-3.5 w-3.5" /> Record Skill A</button>
+          <button disabled={busy !== null} onClick={() => record('B')} className="flex items-center gap-2 rounded-md border border-amber-400/60 px-3 py-2 text-xs font-semibold text-amber-200 disabled:opacity-50"><Circle className="h-3.5 w-3.5" /> Record Skill B</button>
+        </>}
         <button disabled={busy !== null} onClick={() => control({ target: 'twin', action: 'reset' }, 'Twin reset')} className="p-2 text-slate-500 hover:text-white" aria-label="Reset twin"><RefreshCw className="h-4 w-4" /></button>
       </div>
     </div>
@@ -86,6 +94,7 @@ export function LiveOps({ live, onToast, onRefresh }: Props) {
       <span className={camera.tag_seen ? 'text-emerald-300' : 'text-amber-300'}>{camera.tag_seen ? 'tag locked' : 'tag not seen'}</span>
       <span>twin {twin.render_fps.toFixed(1)} fps</span>
       <span>source {twin.source}</span>
+      <span>{camera.prompt_state === 'RECORDING' ? `recording Skill ${camera.recording_skill}` : camera.prompt_state === 'PROMPTED' ? 'recording saved; factory started' : 'ready to record'}</span>
       <span>cube {twin.cube_xy[0].toFixed(3)}, {twin.cube_xy[1].toFixed(3)} m</span>
       <span>{camera.detection ? `sees ${camera.detection.label}` : 'no extra object'}</span>
       <span>{twin.mesh_label}</span>

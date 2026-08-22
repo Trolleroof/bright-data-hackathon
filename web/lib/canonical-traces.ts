@@ -253,7 +253,21 @@ export function generateCanonicalTrace(runType: 'A' | 'B' = 'A'): TraceTree {
     ]
   );
 
-  // 9. Skill Execution
+  // 9. Port run sync
+  addStep('port_sync', 48.0, {
+    integration: 'Port',
+    result: 'synced',
+    entity_flow: 'physical_prompt → change_request → factory_run → approval → twin_release',
+    blocking: false,
+  }, [
+    {
+      name: 'port_entities_upserted',
+      offsetFromStartMs: 38.0,
+      attrs: { blueprints: isRunB ? 6 : 5, board: 'Bidex physical prompts' },
+    },
+  ]);
+
+  // 10. Skill Execution
   addStep('skill_exec', 280.0, {
     engine: 'mujoco_so101',
     duration_s: 2.2,

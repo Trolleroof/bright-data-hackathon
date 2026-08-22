@@ -191,6 +191,11 @@ class LiveTwin:
         cam.lookat[:] = LOOKAT
 
         runner = self._load_runner()
+        if runner is not None:
+            first_approach = next((step for step in runner.spec.steps if step["op"] == "approach"), None)
+            if first_approach is not None:
+                driver.reset_cube(data, tuple(first_approach["at"]))
+                mujoco.mj_forward(model, data)
         hot_swaps = 0
         frames = 0
         last_render = 0.0
@@ -245,6 +250,11 @@ class LiveTwin:
                     self._reset_requested.clear()
                     mujoco.mj_resetData(model, data)
                     runner = self._load_runner()
+                    if runner is not None:
+                        first_approach = next((step for step in runner.spec.steps if step["op"] == "approach"), None)
+                        if first_approach is not None:
+                            driver.reset_cube(data, tuple(first_approach["at"]))
+                            mujoco.mj_forward(model, data)
 
                 source = self._source
                 setpoint = None
@@ -256,7 +266,7 @@ class LiveTwin:
                         anchor.apply(data, result.cube_xy)
                 elif source == "skill" and runner is not None:
                     if not runner.finished:
-                        setpoint = runner.tick(data.time)
+                        setpoint = runner.tick(time.monotonic())
                         if setpoint is not None:
                             driver.apply(model, data, setpoint)
                     try:

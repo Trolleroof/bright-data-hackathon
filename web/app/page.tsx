@@ -55,8 +55,6 @@ export default function ControlRoom() {
 
   const activeTrace = useMemo(() => traces.find((trace) => trace.trace_id === selectedTraceId) || null, [traces, selectedTraceId]);
   const activeSpan = useMemo(() => activeTrace?.flat_spans.find((span) => span.span_id === selectedSpanId) || null, [activeTrace, selectedSpanId]);
-  const latestOp = activeTrace?.flat_spans.at(-1)?.name || 'idle';
-
   const runDemo = async (run: 'A' | 'B') => {
     setIsTriggering(true);
     try {
@@ -94,7 +92,7 @@ export default function ControlRoom() {
   };
 
   return <div className="flex h-screen flex-col overflow-hidden bg-obsidian-950 text-slate-100">
-    <Header status={status} totalTraces={status?.total_traces ?? traces.length} totalSpans={status?.total_spans ?? traces.reduce((sum, trace) => sum + trace.span_count, 0)} latestOp={latestOp} isTriggering={isTriggering} isProgramRunning={isProgramRunning} onRunA={() => runDemo('A')} onRunB={() => runDemo('B')} onRefresh={() => { fetchLive(); fetchStatus(); fetchTraces(); }} onClear={clearTraces} onRunProgram={runProgram} />
+    <Header status={status} isTriggering={isTriggering} isProgramRunning={isProgramRunning} onRunA={() => runDemo('A')} onRunB={() => runDemo('B')} onRefresh={() => { fetchLive(); fetchStatus(); fetchTraces(); }} onClear={clearTraces} onRunProgram={runProgram} />
     <main className="flex min-h-0 flex-1">
       <Sidebar traces={traces} selectedTraceId={selectedTraceId} onSelectTrace={(id) => { setSelectedTraceId(id); setSelectedSpanId(null); }} filter={filter} onFilterChange={setFilter} isStreaming={isTriggering} utcTime={utcTime} />
       <div className="min-w-0 flex-1 overflow-y-auto">

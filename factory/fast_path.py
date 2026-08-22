@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from factory.patch import patch_spec
 from factory.replay_test import ReplayResult, replay_test
 from integrations.brightdata import lookup
 from integrations.config import ROOT, load_settings
+from integrations.port import sync_fast_path_run
 from integrations.tracing import record_event, span
 from vision.bag import PromptBag, load_bag
 
@@ -124,6 +126,29 @@ def run_fast_path(
         )
 
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    with span("port_sync", integration="Port", blocking=False) as port_span:
+        try:
+            spec_obj = json.loads(spec_path.read_text())
+            spec_step_count = len(spec_obj.get("steps", [])) if isinstance(spec_obj, dict) else 0
+            synced = sync_fast_path_run(
+                bag_id=bag.bag_id,
+                duration_s=bag.duration_s,
+                motion=params.motion,
+                replay_passed=replay.passed,
+                replay_detail=replay.detail,
+                elapsed_ms=elapsed_ms,
+                append=append,
+                spec_step_count=spec_step_count,
+                catalog=catalog,
+            )
+            result = "skipped" if synced.startswith("skipped") else "synced"
+            port_span.set_attribute("result", result)
+            record_event("port_entities_upserted", summary=synced)
+            print(f"  port synced     |  {synced}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - Port must not block the factory
+            port_span.set_attribute("result", "error")
+            record_event("port_sync_failed", error=str(exc))
+            print(f"  port skipped    |  {exc}", flush=True)
     return FactoryResult(bag_path, spec_path, params, catalog, mesh_result, replay, elapsed_ms)
 
 

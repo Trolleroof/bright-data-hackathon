@@ -136,6 +136,7 @@ export interface CameraState {
   height: number;
   frames: number;
   prompt_state: PromptState;
+  recording_skill: 'A' | 'B' | null;
   detection: DetectionState | null;
 }
 

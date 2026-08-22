@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --bg-obsidian: #05070a;
-  --panel-bg: #0a0e16;
-  --card-bg: #0f1523;
-  --card-border: #172133;
-  --hud-cyan: #00f5d4;
-  --hud-emerald: #10b981;
-  --hud-amber: #f59e0b;
-  --hud-violet: #a855f7;
-  --hud-ruby: #f43f5e;
-  --hud-blue: #3b82f6;
+  --bg-obsidian: #060c07;
+  --panel-bg: #0a140b;
+  --card-bg: #0f1d10;
+  --card-border: #1a2e18;
+  --hud-cyan: #a8d5e2;
+  --hud-emerald: #7cb851;
+  --hud-amber: #f9a620;
+  --hud-violet: #ffd449;
+  --hud-ruby: #ef5b38;
+  --hud-blue: #7fbdd0;
 }
 
 /* Sleek Scrollbars */
@@ -21,14 +21,14 @@
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(5, 7, 10, 0.8);
+  background: rgba(6, 12, 7, 0.8);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e2b42;
+  background: #24401f;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #273854;
+  background: #2f5227;
 }
 
 /* Keyframe animations */
@@ -77,36 +77,36 @@
 
 /* Glassmorphism */
 .glass-panel {
-  background: rgba(15, 21, 35, 0.75);
+  background: rgba(15, 29, 16, 0.75);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(30, 43, 66, 0.7);
+  border: 1px solid rgba(36, 64, 31, 0.7);
 }
 
 .glass-drawer {
-  background: rgba(10, 14, 22, 0.92);
+  background: rgba(10, 20, 11, 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-left: 1px solid rgba(0, 245, 212, 0.2);
+  border-left: 1px solid rgba(168, 213, 226, 0.2);
 }
 
 /* Glow Borders */
 .glow-border-cyan {
-  border-color: rgba(0, 245, 212, 0.4);
-  box-shadow: 0 0 15px -3px rgba(0, 245, 212, 0.25);
+  border-color: rgba(168, 213, 226, 0.4);
+  box-shadow: 0 0 15px -3px rgba(168, 213, 226, 0.25);
 }
 
 .glow-border-emerald {
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 0 15px -3px rgba(16, 185, 129, 0.25);
+  border-color: rgba(124, 184, 81, 0.4);
+  box-shadow: 0 0 15px -3px rgba(124, 184, 81, 0.25);
 }
 
 .glow-border-violet {
-  border-color: rgba(168, 85, 247, 0.4);
-  box-shadow: 0 0 15px -3px rgba(168, 85, 247, 0.25);
+  border-color: rgba(255, 212, 73, 0.4);
+  box-shadow: 0 0 15px -3px rgba(255, 212, 73, 0.25);
 }
 
 .glow-border-amber {
-  border-color: rgba(245, 158, 11, 0.4);
-  box-shadow: 0 0 15px -3px rgba(245, 158, 11, 0.25);
+  border-color: rgba(249, 166, 32, 0.4);
+  box-shadow: 0 0 15px -3px rgba(249, 166, 32, 0.25);
 }

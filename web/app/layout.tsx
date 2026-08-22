@@ -1,28 +1,29 @@
 import type { Metadata } from "next";
-import { Outfit, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter_Tight, Bricolage_Grotesque, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const outfit = Outfit({
+const interTight = Inter_Tight({
   subsets: ["latin"],
-  variable: "--font-outfit",
+  variable: "--font-inter-tight",
   display: "swap",
 });
 
-const spaceGrotesk = Space_Grotesk({
+const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
-  variable: "--font-space-grotesk",
+  variable: "--font-bricolage",
   display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "BIDEX // Flight Recorder & Trace Timeline Viewer",
-  description: "Mission Control Telemetry HUD & High-Precision OpenTelemetry Trace Viewer for Zero-Downtime Physical Prompting",
+  title: "Bidex",
+  description: "Zero-downtime physical prompting — twin, camera, traces, Port, Bright Data",
   icons: {
     icon: "/favicon.ico",
   },
@@ -36,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark scroll-smooth">
       <body
-        className={`${outfit.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans bg-obsidian-950 text-slate-100 min-h-screen antialiased overflow-hidden selection:bg-hud-cyan selection:text-obsidian-950`}
+        className={`${interTight.variable} ${bricolage.variable} ${plexMono.variable} font-sans bg-obsidian-950 text-slate-100 min-h-screen antialiased overflow-hidden selection:bg-hud-cyan selection:text-obsidian-950`}
       >
         {children}
       </body>

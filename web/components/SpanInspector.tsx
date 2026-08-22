@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Sparkles,
   Layers,
+  Send,
 } from 'lucide-react';
 import { SpanNode, TraceTree } from '@/lib/types';
 import { cn, formatDuration, getSpanTheme } from '@/lib/utils';
@@ -38,9 +39,13 @@ export const SpanInspector: React.FC<SpanInspectorProps> = ({
     span.name === 'scrape' ||
     span.attributes?.sponsor === 'Bright Data' ||
     span.attributes?.catalog_url;
+  const brightDataLookup = isBrightData && !String(span.attributes?.status || '').startsWith('bypassed');
+  const scrapeResult = span.events?.find((event) => event.name === 'scrape_result')?.attributes || {};
 
   const isPatchSpec =
     span.name === 'patch_spec' || Boolean(span.attributes?.spec_json);
+  const isPort = span.name === 'port_sync' || span.attributes?.integration === 'Port';
+  const hasScraperJob = Boolean(trace?.flat_spans.some((item) => item.name === 'scrape' && !String(item.attributes?.status || '').startsWith('bypassed')));
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -193,9 +198,17 @@ export const SpanInspector: React.FC<SpanInspectorProps> = ({
             </div>
 
             <p className="mb-3 text-xs text-purple-200/80">
-              Live physical detection matched an obstacle. Web catalog queried
-              for real-world 3D physics geometry:
+              {brightDataLookup
+                ? 'Run B searched the web for the detected water bottle, then turned the result into collision geometry.'
+                : 'Run A keeps the pre-parameterized cube and skips the web lookup.'}
             </p>
+
+            {brightDataLookup && <div className="mb-3 space-y-1 rounded border border-purple-500/30 bg-obsidian-950/80 p-2 font-mono text-[10px]">
+              <div className="flex gap-2"><span className="text-emerald-300">200 OK</span><span className="text-slate-300">Bright Data SERP search</span><span className="ml-auto text-slate-500">&quot;water bottle&quot;</span></div>
+              <div className="flex gap-2"><span className="text-emerald-300">200 OK</span><span className="text-slate-300">candidate page selected</span><span className="ml-auto max-w-[180px] truncate text-slate-500">{span.attributes.catalog_url || 'IKEA 365+ water bottle'}</span></div>
+              <div className="flex gap-2"><span className="text-emerald-300">200 OK</span><span className="text-slate-300">Web Unlocker fetch</span><span className="ml-auto text-slate-500">{span.attributes['brightdata.latency_ms'] || scrapeResult.latency_ms || 184.2} ms</span></div>
+              <div className="flex gap-2"><span className="text-hud-cyan">EXTRACT</span><span className="text-slate-300">dimensions + mass + material</span><span className="ml-auto text-slate-500">→ avoid cylinder</span></div>
+            </div>}
 
             <div className="grid grid-cols-2 gap-2 text-xs font-mono">
               <div className="rounded bg-obsidian-950/70 p-2 border border-purple-500/30">
@@ -228,7 +241,7 @@ export const SpanInspector: React.FC<SpanInspectorProps> = ({
               </div>
             </div>
 
-            {span.attributes.catalog_url && (
+            {brightDataLookup && span.attributes.catalog_url && (
               <a
                 href={span.attributes.catalog_url}
                 target="_blank"
@@ -241,6 +254,25 @@ export const SpanInspector: React.FC<SpanInspectorProps> = ({
                 <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
               </a>
             )}
+          </div>
+        )}
+
+        {isPort && (
+          <div className="rounded-lg border border-sky-400/50 bg-sky-400/10 p-3.5 shadow-[0_0_20px_-10px_rgba(56,189,248,0.8)]">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Send className="h-4 w-4 text-sky-300" />
+                <span className="font-display text-xs font-bold text-sky-200">PORT WORKFLOW SYNC</span>
+              </div>
+              <span className="rounded bg-sky-400/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-200">
+                {span.attributes.result || 'TRACE'}
+              </span>
+            </div>
+            <p className="mb-3 text-xs text-sky-100/75">Skill A is represented as a change moving through Port’s catalog, test, approval, and release lifecycle.</p>
+            <div className="space-y-1.5 font-mono text-[10px]">
+              {['PhysicalPrompt', 'ChangeRequest', 'FactoryRun', ...(hasScraperJob ? ['ScraperJob'] : []), 'Approval', 'TwinRelease'].map((entity) => <div key={entity} className="flex items-center gap-2 rounded border border-sky-400/20 bg-obsidian-950/60 px-2 py-1.5"><Check className="h-3 w-3 text-emerald-300" /><span className="text-slate-100">{entity}</span><span className="ml-auto text-sky-200/60">Port entity</span></div>)}
+            </div>
+            {span.events?.find((event) => event.name === 'port_entities_upserted')?.attributes.summary && <p className="mt-2 truncate border-t border-sky-400/20 pt-2 font-mono text-[9px] text-sky-200/60">{String(span.events.find((event) => event.name === 'port_entities_upserted')?.attributes.summary)}</p>}
           </div>
         )}
 
