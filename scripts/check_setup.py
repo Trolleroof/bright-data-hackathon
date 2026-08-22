@@ -34,6 +34,19 @@ def check_twin() -> str:
     return f"scene ok ({model.nbody} bodies)"
 
 
+def check_vision() -> str:
+    """Camera stack imports and the tag size is set. Does not open the camera."""
+    import cv2  # noqa: PLC0415 — reported as a row, not a hard import
+
+    from vision.tag import TagDetector
+
+    settings = load_settings()
+    if settings.apriltag_size_m <= 0:
+        return f"opencv {cv2.__version__}. APRILTAG_SIZE_CM not set -> tracking SKIPPED"
+    TagDetector(settings.apriltag_size_m)
+    return f"opencv {cv2.__version__}, tag {settings.apriltag_size_cm} cm"
+
+
 def main() -> int:
     settings = load_settings()
     rows: list[tuple[str, str, str]] = []
@@ -41,6 +54,7 @@ def main() -> int:
 
     checks = [
         ("twin", check_twin),
+        ("vision", check_vision),
         ("signoz", signoz_smoke),
         ("port", port_smoke),
         ("brightdata", brightdata_smoke),
@@ -61,7 +75,9 @@ def main() -> int:
     for name, status, detail in rows:
         print(f"  {name.ljust(width)}  {status:4}  {detail}")
     print()
-    print("Next: python -m twin.sim   (opens the MuJoCo window)")
+    print("Next: python scripts/check_vision.py   (track_cube geometry, no camera)")
+    print("      python -m vision.track            (camera + HUD)")
+    print("      python -m twin.sim --camera       (twin with the cube tracked)")
     return 1 if failed else 0
 
 
