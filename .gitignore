@@ -42,5 +42,10 @@ Thumbs.db
 *.swo
 .python-version
 
+# Node / Next.js
+node_modules/
+.next/
+out/
+
 # Logs
 *.log
