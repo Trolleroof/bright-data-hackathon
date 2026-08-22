@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { Camera, Loader2, Play, RefreshCw } from 'lucide-react';
 import { LiveState } from '@/lib/types';
+import { ImportPrompt } from '@/components/ImportPrompt';
 import { MjpegFeed } from '@/components/MjpegFeed';
 
 interface Props {
@@ -73,6 +74,8 @@ export function LiveOps({ live, onToast, onRefresh }: Props) {
       </div>
     </div>
 
+    {live.object_import && <ImportPrompt state={live.object_import} onToast={onToast} onRefresh={onRefresh} />}
+
     <div className="grid gap-3 lg:grid-cols-2">
       <MjpegFeed src="/api/camera/stream" label="Camera" active={camera.running} idleMessage="Click Sync camera to start" error={camera.error} reconnectKey={reconnect} className="aspect-video" />
       <MjpegFeed src="/api/sim/stream" label="MuJoCo twin" active={twin.running} idleMessage="Click Sync camera or Run skill to start" error={twin.error} reconnectKey={reconnect} className="aspect-video" />
@@ -84,6 +87,8 @@ export function LiveOps({ live, onToast, onRefresh }: Props) {
       <span>twin {twin.render_fps.toFixed(1)} fps</span>
       <span>source {twin.source}</span>
       <span>cube {twin.cube_xy[0].toFixed(3)}, {twin.cube_xy[1].toFixed(3)} m</span>
+      <span>{camera.detection ? `sees ${camera.detection.label}` : 'no extra object'}</span>
+      <span>{twin.mesh_label}</span>
     </div>
   </section>;
 }

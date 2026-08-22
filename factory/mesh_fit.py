@@ -20,6 +20,7 @@ own, and the gap between them is the honest error bar on the fusion.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -201,8 +202,61 @@ def save_asset(asset: MeshAsset, path: Path | None = None, extra: dict[str, Any]
     return payload
 
 
+def save_primitive_asset(
+    *,
+    shape: str,
+    height_cm: float,
+    width_cm: float,
+    rgba: tuple[float, float, float, float],
+    weight_g: float | None = None,
+    label: str = "",
+    source: str = "primitive",
+    path: Path | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Write a *primitive* asset record — a shape, not a downloaded mesh.
+
+    The mesh rungs need a file on disk; a primitive needs only numbers, so this
+    is the one asset the twin can adopt with no network at all. ``kind`` is what
+    ``twin/world.py`` branches on, and ``rung`` stays 3 so the HUD keeps calling
+    it what it is: the primitive, not a scraped mesh.
+    """
+    if height_cm <= 0 or width_cm <= 0:
+        raise MeshFitError("a primitive needs positive height_cm and width_cm")
+    radius_m = (width_cm / 100.0) / 2.0
+    half_height_m = (height_cm / 100.0) / 2.0
+    volume_m3 = math.pi * radius_m**2 * (2 * half_height_m)
+    density, density_source = _density(weight_g, volume_m3, 950.0)
+
+    payload = {
+        "kind": "primitive",
+        "shape": shape,
+        "rung": 3,
+        "source": source,
+        "label": label,
+        "height_cm": round(float(height_cm), 2),
+        "width_cm": round(float(width_cm), 2),
+        "radius_m": round(radius_m, 5),
+        "half_height_m": round(half_height_m, 5),
+        "rgba": [round(float(c), 3) for c in rgba],
+        "mass_g": float(weight_g) if weight_g else None,
+        "volume_cm3": round(volume_m3 * 1e6, 2),
+        "density_kg_m3": float(density),
+        "density_source": density_source,
+        **(extra or {}),
+    }
+    path = path or ASSET_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return payload
+
+
 def load_asset(path: Path | None = None) -> dict[str, Any] | None:
-    """The current mesh asset, or None when the twin is on the primitive rung."""
+    """The current obstacle asset, or None when the twin is on the stock scene.
+
+    Two shapes come back here: a fitted mesh (two STLs that must still exist on
+    disk) and a primitive (numbers only, written by ``save_primitive_asset``).
+    """
     path = path or ASSET_PATH
     try:
         asset = json.loads(path.read_text())
@@ -210,6 +264,8 @@ def load_asset(path: Path | None = None) -> dict[str, Any] | None:
         return None
     if not isinstance(asset, dict):
         return None
+    if asset.get("kind") == "primitive":
+        return asset if asset.get("radius_m") and asset.get("half_height_m") else None
     for key in ("visual_path", "collision_path"):
         if not asset.get(key) or not Path(asset[key]).exists():
             return None
