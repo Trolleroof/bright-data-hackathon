@@ -3,6 +3,11 @@
   <include file="assets/so101/so101_new_calib.xml"/>
   <option timestep="0.002" gravity="0 0 -9.81"/>
 
+  <!-- Offscreen buffer for the headless web render (twin/live.py). -->
+  <visual>
+    <global offwidth="1280" offheight="960"/>
+  </visual>
+
   <default>
     <geom condim="3" friction="0.8 0.1 0.1"/>
   </default>

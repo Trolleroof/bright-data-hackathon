@@ -39,6 +39,43 @@ With `--camera`, keys go in **this terminal** (not the MuJoCo window):
 
 Missing sponsor keys = that row says skipped. The sim still opens.
 
+## Everything in one browser tab
+
+`web/` is the mission-control UI: the MuJoCo twin, the live camera feed, the
+cube telemetry, and the local trace waterfall side by side. The twin is
+rendered headless (`twin/live.py`) and the camera runs `track_cube` in the
+background (`vision/live.py`); both are pushed to the browser as MJPEG, so
+there is no native window to arrange and no viewer to keep alive.
+
+Two processes. Python owns MuJoCo and OpenCV, Next.js owns the UI:
+
+```bash
+python web/server.py --twin --camera   # port 8080: twin render, camera, traces
+cd web && npm install && npm run dev   # port 3000: open this one
+```
+
+`--twin` and `--camera` just pre-warm the services — the **LIVE OPS** tab can
+start and stop both itself. That tab gives you:
+
+| Control | What it does |
+|---|---|
+| cube source | `track_cube` (camera drives the cube), `skill engine` (replays `outputs/skill_spec.json`), or `idle` |
+| view | operator / overhead / front / wide camera presets on the headless render |
+| replay | resets the world to t=0 and re-runs the current spec |
+| start/stop twin, start/stop camera | bring either service up or down without restarting anything |
+
+The table map underneath plots all three readings in one frame: where the twin
+holds the cube, where the camera says it is, and where the skill cursor is. Edit
+`outputs/skill_spec.json` while the tab is open and the hot-swap counter ticks —
+that is the zero-downtime claim, visible.
+
+Without the Python service the UI still loads and says so; the trace waterfall
+falls back to its canonical demo traces. Point the UI at a backend on another
+host with `BIDEX_BACKEND_URL`.
+
+No camera permission, no printed tag, or no `APRILTAG_SIZE_CM` — the camera
+panel reports exactly which one, and the twin keeps running.
+
 ## First-pass skill replay
 
 `outputs/skill_spec.json` is the hot-swappable, version-2 recipe. It supports

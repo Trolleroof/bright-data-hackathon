@@ -8,12 +8,14 @@ import { FlameGraph } from '@/components/FlameGraph';
 import { RawJsonView } from '@/components/RawJsonView';
 import { SpanInspector } from '@/components/SpanInspector';
 import { EmptyState } from '@/components/EmptyState';
+import { LiveOps } from '@/components/LiveOps';
 import {
   TraceTree,
-  SpanNode,
   BackendStatus,
+  LiveState,
   ViewMode,
   FilterType,
+  WorkspaceTab,
 } from '@/lib/types';
 
 export default function FlightRecorderPage() {
@@ -27,6 +29,8 @@ export default function FlightRecorderPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [utcTime, setUtcTime] = useState('--:--:--');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [tab, setTab] = useState<WorkspaceTab>('live');
+  const [live, setLive] = useState<LiveState | null>(null);
 
   // Show quick HUD toast
   const showToast = (msg: string) => {
@@ -89,6 +93,16 @@ export default function FlightRecorderPage() {
     []
   );
 
+  // Fetch live twin + camera telemetry
+  const fetchLive = useCallback(async () => {
+    try {
+      const res = await fetch('/api/live', { cache: 'no-store' });
+      if (res.ok) setLive(await res.json());
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Initial load + periodic polling
   useEffect(() => {
     fetchStatus();
@@ -101,6 +115,14 @@ export default function FlightRecorderPage() {
 
     return () => clearInterval(pollInterval);
   }, [fetchStatus, fetchTraces]);
+
+  // The live HUD polls faster than the trace log, and only while it is visible.
+  useEffect(() => {
+    fetchLive();
+    if (tab !== 'live') return;
+    const timer = setInterval(fetchLive, 500);
+    return () => clearInterval(timer);
+  }, [fetchLive, tab]);
 
   // Selected Trace Object
   const activeTrace = useMemo(() => {
@@ -216,6 +238,9 @@ export default function FlightRecorderPage() {
         return;
       }
 
+      // Run/clear hotkeys belong to the recorder tab; the live tab has its own controls.
+      if (tab === 'live' && e.key !== 'Escape') return;
+
       if (e.key === 'a' || e.key === 'A') {
         e.preventDefault();
         handleRunA();
@@ -235,7 +260,7 @@ export default function FlightRecorderPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleRunA, handleRunB, handleRefresh, handleClear]);
+  }, [handleRunA, handleRunB, handleRefresh, handleClear, tab]);
 
   return (
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-obsidian-950 font-sans text-slate-100">
@@ -259,8 +284,55 @@ export default function FlightRecorderPage() {
         onClear={handleClear}
       />
 
+      {/* Workspace tab strip: the live table vs. the recorded trace log */}
+      <nav className="relative z-10 flex items-center gap-1 border-b border-obsidian-800 bg-obsidian-900/70 px-5">
+        {(
+          [
+            { id: 'live' as const, label: 'LIVE OPS', hint: 'twin render + camera feed' },
+            { id: 'recorder' as const, label: 'FLIGHT RECORDER', hint: 'trace waterfall' },
+          ]
+        ).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            title={item.hint}
+            onClick={() => setTab(item.id)}
+            className={
+              'relative px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.2em] transition-colors ' +
+              (tab === item.id
+                ? 'text-hud-cyan'
+                : 'text-slate-500 hover:text-slate-300')
+            }
+          >
+            {item.label}
+            {tab === item.id && (
+              <span className="absolute inset-x-3 bottom-0 h-px bg-hud-cyan shadow-glow-cyan" />
+            )}
+          </button>
+        ))}
+
+        <div className="ml-auto flex items-center gap-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]">
+          <span className={live?.backend_online ? 'text-hud-emerald' : 'text-hud-amber'}>
+            {live?.backend_online ? 'live backend up' : 'live backend offline'}
+          </span>
+          <span className="text-obsidian-600">|</span>
+          <span className={live?.twin.running ? 'text-hud-emerald' : 'text-obsidian-600'}>
+            twin {live?.twin.running ? 'running' : 'idle'}
+          </span>
+          <span className="text-obsidian-600">|</span>
+          <span className={live?.camera.running ? 'text-hud-emerald' : 'text-obsidian-600'}>
+            camera {live?.camera.running ? 'running' : 'off'}
+          </span>
+        </div>
+      </nav>
+
       {/* Workspace Area: Sidebar + Main Stage */}
-      <main className="relative z-10 flex flex-1 overflow-hidden">
+      <main
+        className={
+          'relative z-10 flex flex-1 overflow-hidden ' +
+          (tab === 'live' ? 'hidden' : '')
+        }
+      >
         {/* Left Flight Log Sidebar */}
         <Sidebar
           traces={traces}
@@ -325,6 +397,13 @@ export default function FlightRecorderPage() {
           />
         )}
       </main>
+
+      {/* Live Ops: headless twin render, camera feed, table map */}
+      {tab === 'live' && (
+        <main className="relative z-10 flex flex-1 overflow-hidden">
+          <LiveOps live={live} onToast={showToast} onRefresh={fetchLive} />
+        </main>
+      )}
 
       {/* Toast HUD Notification */}
       {toastMessage && (

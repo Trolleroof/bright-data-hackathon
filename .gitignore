@@ -49,3 +49,6 @@ out/
 
 # Logs
 *.log
+
+# TypeScript incremental build cache
+web/tsconfig.tsbuildinfo
