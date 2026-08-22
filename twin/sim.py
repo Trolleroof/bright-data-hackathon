@@ -190,7 +190,7 @@ def main() -> None:
                 if hud is not None and result is not None and not args.no_hud:
                     frame = hud.draw(result)
                     if frame is not None:
-                        cv2.imshow("ScaleTwin — track_cube", frame)
+                        cv2.imshow("Bidex — track_cube", frame)
                         cv2.waitKey(1)
 
                 now = time.time()

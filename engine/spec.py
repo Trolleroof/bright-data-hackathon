@@ -102,7 +102,7 @@ def _validate_step(step: Any, index: int) -> dict[str, Any]:
             "mass_kg": float(weight_g) / 1000 if weight_g is not None else None,
             "mass_defaulted": weight_g is None,
         }
-    raise SpecError(f"steps[{index}].op must be replay_trajectory or goto")
+    raise SpecError(f"steps[{index}].op must be replay_trajectory, goto, approach, grasp, place, release, or avoid")
 
 
 def load(path: str | Path) -> SkillSpec:
