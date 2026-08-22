@@ -57,7 +57,10 @@ def run_fast_path(
 
     catalog = None
     mesh_result: MeshLadderResult | None = None
-    if params.obstacle_xy:
+    # Hands and table clutter look like "not-red" blobs. Only scrape when the
+    # caller asked for Run B (append / explicit label), not on every pick.
+    want_obstacle = append or scrape_label is not None
+    if params.obstacle_xy and want_obstacle:
         label = scrape_label or params.obstacle_label or "water bottle"
         with span("scrape", label=label):
             catalog = lookup(label)

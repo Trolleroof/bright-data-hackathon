@@ -51,6 +51,7 @@ SEED_SPEC = {
         {"op": "grasp"},
         {"op": "place", "at": [0.12, 0.08, 0], "duration_s": 1.2},
         {"op": "release"},
+        {"op": "approach", "at": [0.12, 0.08], "height_cm": 8, "duration_s": 0.5},
     ],
 }
 

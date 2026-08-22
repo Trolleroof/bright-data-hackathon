@@ -69,24 +69,16 @@ class PhysicalPromptRecorder:
             return self.state
 
         elapsed = time.perf_counter() - self._started_at
-        obstacle_xy = self._obstacle_xy(result)
-        self._frames.append(
-            BagFrame(
-                t=elapsed,
-                cube_xy=result.cube_xy,
-                obstacle_xy=obstacle_xy,
-                tag_seen=result.tag_seen,
-            )
-        )
+        self._append(result, elapsed)
         if elapsed >= self.config.max_duration_s:
-            return self.stop(result)
+            return self.stop()
         return self.state
 
     def stop(self, result: TrackResult | None = None) -> PromptState:
         if self.state is not PromptState.RECORDING or self._started_at is None:
             return self.state
         if result is not None:
-            self.sample(result)
+            self._append(result, time.perf_counter() - self._started_at)
 
         elapsed = time.perf_counter() - self._started_at
         valid = [frame for frame in self._frames if frame.cube_xy is not None]
@@ -109,6 +101,16 @@ class PhysicalPromptRecorder:
         self.state = PromptState.PROMPTED
         print(f"  PROMPTED  |  saved {path.name}  |  {len(self._frames)} frames  |  {elapsed:.1f}s")
         return self.state
+
+    def _append(self, result: TrackResult, elapsed: float) -> None:
+        self._frames.append(
+            BagFrame(
+                t=elapsed,
+                cube_xy=result.cube_xy,
+                obstacle_xy=self._obstacle_xy(result),
+                tag_seen=result.tag_seen,
+            )
+        )
 
     def _obstacle_xy(self, result: TrackResult) -> tuple[float, float] | None:
         if result.frame is None or result.tag is None:

@@ -87,7 +87,12 @@ class SkillDriver:
         ]
         self._arm_qpos = [int(model.jnt_qposadr[joint]) for joint in self._arm_joints]
         self._arm_dof = [int(model.jnt_dofadr[joint]) for joint in self._arm_joints]
-        self._gripper = mujoco.mj_name2id(model, mujoco.mjtObj.mjACTUATOR, "gripper")
+        self._gripper = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper")
+        # Keep the visual arm from shoving a released cube; the table still
+        # collides with it and keeps it on the tabletop.
+        robot_geoms = np.flatnonzero(model.geom_group == 3)
+        model.geom_contype[robot_geoms] = 2
+        model.geom_conaffinity[robot_geoms] = 2
         self._obstacle_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
         self._obstacle_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "obstacle_geom")
         self._obstacle_qpos = int(
@@ -118,6 +123,9 @@ class SkillDriver:
         data.qpos[a : a + 3] = (x, y, TABLE_TOP_Z + z + CUBE_HALF)
         data.qpos[a + 3 : a + 7] = (1.0, 0.0, 0.0, 0.0)
         data.qvel[self._cube_dof : self._cube_dof + 6] = 0.0
+
+    def reset_cube(self, data: mujoco.MjData, xy: tuple[float, float]) -> None:
+        self._cube(data, *xy, 0.0)
 
     def apply(self, model: mujoco.MjModel, data: mujoco.MjData, setpoint: Setpoint) -> None:
         target = np.array((setpoint.x, setpoint.y, TABLE_TOP_Z + setpoint.z + CUBE_HALF))
@@ -192,12 +200,20 @@ def _overlay(
     viewer.set_images((mujoco.MjrRect(16, 16, HUD_W, HUD_H), rgb))
 
 
-def _start_skill(model: mujoco.MjModel, spec_path: Path) -> tuple[Runner, SkillDriver] | tuple[None, None]:
+def _start_skill(
+    model: mujoco.MjModel, data: mujoco.MjData, spec_path: Path
+) -> tuple[Runner, SkillDriver] | tuple[None, None]:
     if not spec_path.exists():
         print(f"  no spec at {spec_path}; record a prompt first (R)")
         return None, None
     try:
-        return Runner(load(spec_path), spec_path), SkillDriver(model)
+        spec = load(spec_path)
+        driver = SkillDriver(model)
+        first_approach = next((step for step in spec.steps if step["op"] == "approach"), None)
+        if first_approach is not None:
+            driver.reset_cube(data, tuple(first_approach["at"]))
+            mujoco.mj_forward(model, data)
+        return Runner(spec, spec_path), driver
     except SpecError as exc:
         print(f"  skill spec rejected: {exc}")
         return None, None
@@ -225,7 +241,7 @@ def main() -> None:
     driver: SkillDriver | None = None
     skill_active = False
     if args.skill and not args.camera:
-        runner, driver = _start_skill(model, args.spec)
+        runner, driver = _start_skill(model, data, args.spec)
         if runner is None:
             raise SystemExit(1)
         skill_active = True
@@ -320,6 +336,7 @@ def main() -> None:
                 print("  factory already running")
                 return
             factory_busy = True
+        print(f"  factory started  |  bag={bag_path.name}  |  append={append}", flush=True)
 
         def _work() -> None:
             nonlocal factory_busy
@@ -393,7 +410,7 @@ def main() -> None:
                         if not last_replay_passed and not args.spec.exists():
                             print("  record a prompt first (R), wait for factory PASS, then S")
                         else:
-                            runner, driver = _start_skill(model, args.spec)
+                            runner, driver = _start_skill(model, data, args.spec)
                             if runner is not None:
                                 skill_active = True
                                 print("  skill running")
