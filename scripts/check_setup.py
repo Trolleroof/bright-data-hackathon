@@ -77,7 +77,10 @@ def main() -> int:
     print()
     print("Next: python scripts/check_vision.py   (track_cube geometry, no camera)")
     print("      python -m vision.track            (camera + HUD)")
+    print("      python -m vision.record           (record prompt + factory)")
+    print("      python scripts/run_factory.py --smoke")
     print("      python -m twin.sim --camera       (twin with the cube tracked)")
+    print("      python -m twin.sim --skill        (run outputs/skill_spec.json)")
     return 1 if failed else 0
 
 

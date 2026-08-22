@@ -12,7 +12,7 @@ _RED = (60, 60, 235)
 _WHITE = (245, 245, 245)
 
 
-def draw(result: TrackResult) -> np.ndarray | None:
+def draw(result: TrackResult, prompt_state: str = "IDLE") -> np.ndarray | None:
     if result.frame is None:
         return None
     frame = result.frame.copy()
@@ -25,7 +25,9 @@ def draw(result: TrackResult) -> np.ndarray | None:
         cv2.drawContours(frame, [result.blob.contour], -1, _RED, 2)
         cv2.circle(frame, (int(result.blob.u), int(result.blob.v)), 4, _WHITE, -1)
 
+    state_color = _GREEN if prompt_state == "IDLE" else (60, 180, 255) if prompt_state == "RECORDING" else (255, 180, 60)
     lines = [
+        (f"prompt: {prompt_state}", state_color),
         ("tag: YES" if result.tag_seen else "tag: NO", _GREEN if result.tag_seen else _RED),
         (
             f"cube: {result.cube_xy[0]:+.3f} {result.cube_xy[1]:+.3f} m"
