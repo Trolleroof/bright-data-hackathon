@@ -76,7 +76,7 @@ def load_settings() -> Settings:
         port_client_secret=os.getenv("PORT_CLIENT_SECRET", "").strip(),
         port_api_url=os.getenv("PORT_API_URL", "https://api.port.io/v1").strip(),
         brightdata_api_token=os.getenv("BRIGHTDATA_API_TOKEN", "").strip(),
-        brightdata_serp_zone=os.getenv("BRIGHTDATA_SERP_ZONE", "").strip(),
+        brightdata_serp_zone=os.getenv("BRIGHTDATA_SERP_ZONE", "serp_api1").strip(),
         brightdata_unlocker_zone=os.getenv("BRIGHTDATA_UNLOCKER_ZONE", "").strip(),
         brightdata_catalog_url=os.getenv("BRIGHTDATA_CATALOG_URL", "").strip(),
         apriltag_size_cm=os.getenv("APRILTAG_SIZE_CM", "").strip(),
