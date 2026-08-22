@@ -37,5 +37,5 @@ Fill `.env` when you have them:
 |---|---|
 | `SIGNOZ_ENDPOINT`, `SIGNOZ_INGESTION_KEY` | SigNoz → Settings → Ingestion |
 | `PORT_CLIENT_ID`, `PORT_CLIENT_SECRET` | Port → profile → Credentials |
-| `BRIGHTDATA_API_TOKEN`, `BRIGHTDATA_COLLECTOR_ID` | Bright Data → API token + Scraper Studio collector `c_…` |
+| `BRIGHTDATA_API_TOKEN`, `BRIGHTDATA_SERP_ZONE`, `BRIGHTDATA_UNLOCKER_ZONE` | Bright Data → API token + a SERP zone + a Web Unlocker zone |
 | `APRILTAG_SIZE_CM` | ruler, outer black square after you tape the tag |

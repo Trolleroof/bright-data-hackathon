@@ -18,7 +18,8 @@ class Settings:
     port_client_secret: str
     port_api_url: str
     brightdata_api_token: str
-    brightdata_collector_id: str
+    brightdata_serp_zone: str
+    brightdata_unlocker_zone: str
     brightdata_catalog_url: str
     apriltag_size_cm: str
     camera_index: int
@@ -46,7 +47,9 @@ class Settings:
 
     @property
     def brightdata_ready(self) -> bool:
-        return bool(self.brightdata_api_token and self.brightdata_collector_id)
+        return bool(
+            self.brightdata_api_token and self.brightdata_serp_zone and self.brightdata_unlocker_zone
+        )
 
 
 def _int(name: str, default: int) -> int:
@@ -73,11 +76,9 @@ def load_settings() -> Settings:
         port_client_secret=os.getenv("PORT_CLIENT_SECRET", "").strip(),
         port_api_url=os.getenv("PORT_API_URL", "https://api.port.io/v1").strip(),
         brightdata_api_token=os.getenv("BRIGHTDATA_API_TOKEN", "").strip(),
-        brightdata_collector_id=os.getenv("BRIGHTDATA_COLLECTOR_ID", "").strip(),
-        brightdata_catalog_url=os.getenv(
-            "BRIGHTDATA_CATALOG_URL",
-            "https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/",
-        ).strip(),
+        brightdata_serp_zone=os.getenv("BRIGHTDATA_SERP_ZONE", "").strip(),
+        brightdata_unlocker_zone=os.getenv("BRIGHTDATA_UNLOCKER_ZONE", "").strip(),
+        brightdata_catalog_url=os.getenv("BRIGHTDATA_CATALOG_URL", "").strip(),
         apriltag_size_cm=os.getenv("APRILTAG_SIZE_CM", "").strip(),
         camera_index=_int("CAMERA_INDEX", 0),
         camera_fov_deg=_float("CAMERA_FOV_DEG", 60.0),
