@@ -34,7 +34,12 @@ def run_fast_path(
     scrape_label: str | None = None,
     append: bool = False,
     mesh: bool = True,
+    measured_height_cm: float | None = None,
+    measured_width_cm: float | None = None,
 ) -> FactoryResult:
+    """Run the factory. The bag gives the obstacle's position, not its size, so
+    mesh scale comes from the scrape unless a caller passes a real measurement
+    in ``measured_*`` — ``mesh_rung`` records which of the two was used."""
     started = time.perf_counter()
     spec_path = spec_path or (ROOT / "outputs" / "skill_spec.json")
     bag = load_bag(bag_path)
@@ -68,8 +73,18 @@ def run_fast_path(
         # Shape is the one thing neither the camera nor the scrape can produce.
         # Rung 3 (the primitive) is a normal outcome here, not an error path.
         if mesh:
-            mesh_result = acquire(label, catalog)
-            record_event("mesh_rung", rung=mesh_result.rung, label=mesh_result.label)
+            mesh_result = acquire(
+                label,
+                catalog,
+                measured_height_cm=measured_height_cm,
+                measured_width_cm=measured_width_cm,
+            )
+            record_event(
+                "mesh_rung",
+                rung=mesh_result.rung,
+                label=mesh_result.label,
+                scale_source=(mesh_result.asset or {}).get("scale_source", "none"),
+            )
 
     with span("patch_spec", spec_path=str(spec_path), append=append):
         spec = patch_spec(

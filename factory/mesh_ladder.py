@@ -23,8 +23,9 @@ from typing import Any
 
 from engine.spec import MATERIALS
 from factory.mesh_fit import MeshFitError, clear_asset, fit, save_asset
+from integrations.brightdata import load_rules
 from integrations.config import Settings
-from integrations.mesh_discovery import MeshDiscoveryError, find_mesh
+from integrations.mesh_discovery import MeshDiscoveryError, find_meshes
 from integrations.tracing import record_event, span
 
 
@@ -54,11 +55,13 @@ def acquire(
     settings: Settings | None = None,
     measured_height_cm: float | None = None,
     measured_width_cm: float | None = None,
-    collision_faces: int = 400,
+    collision_faces: int | None = None,
     out_dir: Path | None = None,
 ) -> MeshLadderResult:
     """Search, download, and fit a mesh; fall to the primitive with a reason."""
     catalog = catalog or {}
+    if collision_faces is None:
+        collision_faces = int(load_rules().get("mesh", {}).get("collision_faces", 400))
     height_cm = measured_height_cm or catalog.get("height_cm")
     width_cm = measured_width_cm or catalog.get("width_cm")
     scale_source = "camera" if measured_height_cm else "scrape"
@@ -69,42 +72,52 @@ def acquire(
         return MeshLadderResult(3, None, ["no dimensions to scale a mesh to"])
 
     product_url = catalog.get("url") if catalog.get("source") == "live" else None
+    asset = None
+    attempts: list[dict] = []
     with span("mesh_search", label=label, product_url=product_url or ""):
         try:
-            download = find_mesh(label, product_url=product_url, settings=settings)
+            downloads = find_meshes(label, product_url=product_url, settings=settings)
+            # A download that will not load is not a reason to drop to the
+            # primitive while other candidates are still queued: keep walking.
+            for download in downloads:
+                attempts = download.attempts
+                record_event(
+                    "mesh_found",
+                    rung=download.candidate.rung,
+                    source=download.candidate.source,
+                    url=download.candidate.asset_url,
+                    bytes=download.size_bytes,
+                    latency_ms=download.latency_ms,
+                )
+                with span("mesh_fit", source=download.candidate.source, rung=download.candidate.rung):
+                    try:
+                        asset = fit(
+                            download.path,
+                            height_cm=float(height_cm),
+                            width_cm=float(width_cm),
+                            weight_g=catalog.get("weight_g"),
+                            fallback_density=_fallback_density(catalog.get("material")),
+                            rung=download.candidate.rung,
+                            source=download.candidate.source,
+                            asset_url=download.candidate.asset_url,
+                            page_url=download.candidate.page_url,
+                            collision_faces=collision_faces,
+                            out_dir=out_dir,
+                        )
+                    except (MeshFitError, ImportError, OSError, ValueError) as exc:
+                        reasons.append(f"fit failed for {download.candidate.asset_url}: {exc}")
+                        continue
+                break
         except MeshDiscoveryError as exc:
             clear_asset()
             record_event("mesh_result", rung=3, reason=str(exc))
-            return MeshLadderResult(3, None, [str(exc)])
-        record_event(
-            "mesh_found",
-            rung=download.candidate.rung,
-            source=download.candidate.source,
-            url=download.candidate.asset_url,
-            bytes=download.size_bytes,
-            latency_ms=download.latency_ms,
-        )
+            return MeshLadderResult(3, None, [*reasons, str(exc)], attempts)
 
-    with span("mesh_fit", source=download.candidate.source, rung=download.candidate.rung):
-        try:
-            asset = fit(
-                download.path,
-                height_cm=float(height_cm),
-                width_cm=float(width_cm),
-                weight_g=catalog.get("weight_g"),
-                fallback_density=_fallback_density(catalog.get("material")),
-                rung=download.candidate.rung,
-                source=download.candidate.source,
-                asset_url=download.candidate.asset_url,
-                page_url=download.candidate.page_url,
-                collision_faces=collision_faces,
-                out_dir=out_dir,
-            )
-        except (MeshFitError, ImportError, OSError, ValueError) as exc:
-            clear_asset()
-            reasons.append(f"fit failed: {exc}")
-            record_event("mesh_result", rung=3, reason=reasons[-1])
-            return MeshLadderResult(3, None, reasons, download.attempts)
+    if asset is None:
+        clear_asset()
+        reasons.append("no candidate mesh could be loaded and fitted")
+        record_event("mesh_result", rung=3, reason=reasons[-1])
+        return MeshLadderResult(3, None, reasons, attempts)
 
     payload = save_asset(asset, extra={"scale_source": scale_source})
 
@@ -120,4 +133,4 @@ def acquire(
         density_source=asset.density_source,
         width_residual_cm=asset.width_residual_cm,
     )
-    return MeshLadderResult(asset.rung, payload, reasons, download.attempts)
+    return MeshLadderResult(asset.rung, payload, reasons, attempts)

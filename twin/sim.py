@@ -31,7 +31,7 @@ from engine.spec import SpecError, load
 from factory.mesh_fit import load_asset
 from integrations.config import load_settings
 from integrations.tracing import record_event, span, tracer_ready
-from twin.world import build_scene, rung_label
+from twin.world import resolve_scene, rung_label
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
@@ -95,7 +95,10 @@ class SkillDriver:
         data.qpos[q + 3 : q + 7] = (1.0, 0.0, 0.0, 0.0)
         # A mesh obstacle was already scaled to the measured size on disk, and
         # geom_size means nothing for a mesh geom — only the primitive resizes.
-        if obstacle.get("geom") != "mesh":
+        # Ask the compiled model, not the spec: the two disagree whenever the
+        # asset the spec was written against is no longer the one we loaded.
+        is_mesh = int(model.geom_type[self._obstacle_geom]) == int(mujoco.mjtGeom.mjGEOM_MESH)
+        if not is_mesh:
             model.geom_size[self._obstacle_geom][:2] = (float(obstacle["width_m"]) / 2, float(obstacle["height_m"]) / 2)
         model.geom_friction[self._obstacle_geom][0] = float(obstacle["friction"])
         if obstacle["mass_kg"] is not None:
@@ -185,7 +188,8 @@ def main() -> None:
     # compiles meshes in, so the rung is fixed at launch here. The web twin
     # (twin/live.py) rebuilds and carries state across, which is the live swap.
     mesh_asset = load_asset()
-    model = mujoco.MjModel.from_xml_path(str(build_scene(mesh_asset)))
+    scene, mesh_asset = resolve_scene(mesh_asset)
+    model = mujoco.MjModel.from_xml_path(str(scene))
     _size_tag_to_env(model, settings.apriltag_size_m)
     data = mujoco.MjData(model)
     data.ctrl[:] = 0.0

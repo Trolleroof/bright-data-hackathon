@@ -111,7 +111,9 @@ def _decimate(mesh, target_faces: int):
                 continue
         except Exception:  # noqa: BLE001 — fall through to the hull
             continue
-        if reduced is not None and len(reduced.faces) > 0:
+        # trimesh returns the mesh untouched (no exception) when its optional
+        # decimation backend is missing, so insist on an actual reduction.
+        if reduced is not None and 0 < len(reduced.faces) < len(mesh.faces):
             return reduced
     try:
         return mesh.convex_hull

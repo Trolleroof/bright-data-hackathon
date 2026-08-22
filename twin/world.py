@@ -8,7 +8,7 @@ that mesh instead and writes the result next to ``scene.xml`` so the relative
 
 MuJoCo compiles meshes in, so a mesh cannot be attached to a live model. The
 swap therefore happens by rebuilding the model and carrying ``qpos``/``qvel``
-across — see ``LiveTwin._swap_world``. From the outside that is still one
+across — see ``LiveTwin._build_world``. From the outside that is still one
 uninterrupted twin, which is the whole point of the release story.
 """
 
@@ -62,15 +62,39 @@ def _mesh_body_xml(asset: dict[str, Any]) -> str:
     )
 
 
+class SceneBuildError(RuntimeError):
+    """scene.xml could not be rewritten to carry the mesh."""
+
+
 def build_scene(asset: dict[str, Any] | None, out_path: Path | None = None) -> Path:
-    """Return the scene file to load. No asset means the untouched primitive scene."""
+    """Return the scene file to load. No asset means the untouched primitive scene.
+
+    Raises SceneBuildError if the obstacle body cannot be rewritten — silently
+    returning the primitive here would leave the HUD reporting a mesh rung the
+    twin is not actually running. Callers that want the primitive instead
+    should use ``resolve_scene``.
+    """
     if not asset:
         return SCENE
     xml = SCENE.read_text()
     xml = xml.replace(_ASSET_CLOSE, _mesh_assets_xml(asset), 1)
     xml, count = _OBSTACLE_BODY.subn(_mesh_body_xml(asset), xml, count=1)
     if count != 1:
-        return SCENE
+        raise SceneBuildError(f'no <body name="obstacle"> to replace in {SCENE.name}')
     out_path = out_path or GENERATED
     out_path.write_text(xml)
     return out_path
+
+
+def resolve_scene(
+    asset: dict[str, Any] | None, out_path: Path | None = None
+) -> tuple[Path, dict[str, Any] | None]:
+    """Scene to load plus the asset it really uses — None when we fell to rung 3.
+
+    Pair the returned asset with ``rung_label`` so what the HUD shows and what
+    MuJoCo compiled can never disagree.
+    """
+    try:
+        return build_scene(asset, out_path), asset
+    except (SceneBuildError, OSError):
+        return SCENE, None

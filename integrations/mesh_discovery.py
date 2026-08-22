@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -197,18 +199,20 @@ def download(candidate: MeshCandidate, dest_dir: Path | None = None, *, max_byte
     return target
 
 
-def find_mesh(
+def find_meshes(
     label: str,
     *,
     product_url: str | None = None,
     settings: Settings | None = None,
     dest_dir: Path | None = None,
     max_candidates: int = 6,
-) -> MeshDownload:
-    """Walk the ladder: exact product AR model, then the wider 3D web.
+) -> Iterator[MeshDownload]:
+    """Yield every candidate that downloads, best rung first.
 
-    Raises MeshDiscoveryError when both rungs come up empty — that is rung 3,
-    the primitive, and the caller is expected to say so on the HUD.
+    Downloading is not the same as being loadable — a page's AR model is often
+    a .usdz trimesh cannot open — so the caller gets to try the fit and come
+    back for the next one instead of dropping to the primitive on the first
+    dud. Raises MeshDiscoveryError only if nothing downloaded at all.
     """
     settings = settings or load_settings()
     rules = load_rules()
@@ -229,6 +233,7 @@ def find_mesh(
     if not candidates:
         candidates = web_candidates(label, settings, rules, attempts=attempts)
 
+    yielded = 0
     for candidate in candidates[:max_candidates]:
         try:
             path = download(candidate, dest_dir, max_bytes=max_bytes)
@@ -236,7 +241,8 @@ def find_mesh(
             attempts.append({"source": candidate.source, "stage": "download", "url": candidate.asset_url, "error": str(exc)})
             continue
         attempts.append({"source": candidate.source, "stage": "download", "url": candidate.asset_url, "bytes": path.stat().st_size})
-        return MeshDownload(
+        yielded += 1
+        yield MeshDownload(
             path=path,
             candidate=candidate,
             size_bytes=path.stat().st_size,
@@ -244,6 +250,12 @@ def find_mesh(
             attempts=attempts,
         )
 
-    raise MeshDiscoveryError(
-        f"no downloadable mesh for {label!r} after {len(candidates)} candidates"
-    )
+    if not yielded:
+        raise MeshDiscoveryError(
+            f"no downloadable mesh for {label!r} after {len(candidates)} candidates"
+        )
+
+
+def find_mesh(label: str, **kwargs: Any) -> MeshDownload:
+    """The first candidate that downloads. Raises MeshDiscoveryError if none do."""
+    return next(find_meshes(label, **kwargs))
