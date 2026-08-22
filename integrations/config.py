@@ -24,6 +24,7 @@ class Settings:
     camera_fov_deg: float
     camera_width: int
     camera_height: int
+    camera_fps: int
     cube_track_height_cm: float
     cube_size_cm: float
 
@@ -76,6 +77,7 @@ def load_settings() -> Settings:
         camera_fov_deg=_float("CAMERA_FOV_DEG", 60.0),
         camera_width=_int("CAMERA_WIDTH", 1280),
         camera_height=_int("CAMERA_HEIGHT", 720),
+        camera_fps=_int("CAMERA_FPS", 60),
         cube_track_height_cm=_float("CUBE_TRACK_HEIGHT_CM", 2.5),
         cube_size_cm=_float("CUBE_SIZE_CM", 5.0),
     )

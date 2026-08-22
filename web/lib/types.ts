@@ -78,8 +78,6 @@ export interface TwinState {
   skill_finished: boolean;
   spec_version: number | null;
   hot_swaps: number;
-  /* Which rung of the geometry ladder the obstacle came from: 1 the product's
-     own AR mesh, 2 a mesh found on the wider 3D web, 3 the primitive cylinder. */
   mesh_rung: number;
   mesh_label: string;
   mesh_source: string | null;
@@ -115,4 +113,41 @@ export interface LiveState {
   tracer_mode: string;
   port_ready: boolean;
   brightdata_ready: boolean;
+}
+
+/* --- Check runner: headless demo scripts from the dashboard ---------------- */
+
+export interface CheckDefinition {
+  id: string;
+  label: string;
+  description: string;
+  runnable: boolean;
+  expected_s: number;
+  command: string;
+}
+
+export interface CheckLogLine {
+  n: number;
+  stream: 'out' | 'meta' | string;
+  text: string;
+}
+
+export interface CheckResult {
+  check: string;
+  label: string;
+  exit_code: number;
+  passed: boolean;
+  duration_ms: number;
+}
+
+export interface CheckJob {
+  job_id: string;
+  checks: string[];
+  state: 'running' | 'done' | string;
+  current: string | null;
+  results: CheckResult[];
+  exit_code: number | null;
+  duration_ms: number | null;
+  lines: CheckLogLine[];
+  cursor: number;
 }

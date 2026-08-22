@@ -9,6 +9,7 @@ import { RawJsonView } from '@/components/RawJsonView';
 import { SpanInspector } from '@/components/SpanInspector';
 import { EmptyState } from '@/components/EmptyState';
 import { LiveOps } from '@/components/LiveOps';
+import { ChecksPanel } from '@/components/ChecksPanel';
 import {
   TraceTree,
   BackendStatus,
@@ -31,6 +32,7 @@ export default function FlightRecorderPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [tab, setTab] = useState<WorkspaceTab>('live');
   const [live, setLive] = useState<LiveState | null>(null);
+  const [isProgramRunning, setIsProgramRunning] = useState(false);
 
   // Show quick HUD toast
   const showToast = (msg: string) => {
@@ -226,6 +228,36 @@ export default function FlightRecorderPage() {
     await Promise.all([fetchStatus(), fetchTraces(false)]);
   };
 
+  const handleRunProgram = async () => {
+    if (isProgramRunning) return;
+    setIsProgramRunning(true);
+    showToast('Running the full program...');
+    try {
+      const start = await fetch('/api/checks/run', { method: 'POST' });
+      const { job_id } = await start.json();
+      if (!start.ok || !job_id) throw new Error('Unable to start program');
+
+      let done = false;
+      while (!done) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const res = await fetch(`/api/checks/job?id=${job_id}&since=-1`, { cache: 'no-store' });
+        const job = await res.json();
+        done = job.state === 'done';
+        if (done) {
+          showToast(
+            job.exit_code === 0
+              ? 'Program completed successfully'
+              : 'Program failed — check the terminal output'
+          );
+        }
+      }
+    } catch {
+      showToast('Program could not start — is the local server running?');
+    } finally {
+      setIsProgramRunning(false);
+    }
+  };
+
   // Keyboard hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -282,6 +314,8 @@ export default function FlightRecorderPage() {
         onRunB={handleRunB}
         onRefresh={handleRefresh}
         onClear={handleClear}
+        isProgramRunning={isProgramRunning}
+        onRunProgram={handleRunProgram}
       />
 
       {/* Workspace tab strip: the live table vs. the recorded trace log */}
@@ -386,6 +420,7 @@ export default function FlightRecorderPage() {
               <RawJsonView trace={activeTrace} />
             </div>
           )}
+          <ChecksPanel onToast={showToast} />
         </section>
 
         {/* Right Slide-in Span Inspector Drawer */}

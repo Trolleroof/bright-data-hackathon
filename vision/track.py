@@ -32,6 +32,7 @@ def build_tracker(camera: Camera | None = None) -> tuple[Camera, CubeTracker]:
             index=settings.camera_index,
             width=settings.camera_width,
             height=settings.camera_height,
+            fps=settings.camera_fps,
             fov_deg=settings.camera_fov_deg,
         )
     tracker = CubeTracker(

@@ -31,3 +31,25 @@ export async function backendJson<T>(
     clearTimeout(timeout);
   }
 }
+
+/** Proxy a request to the Python backend for Next.js route handlers. */
+export async function proxyBackend(
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
+  try {
+    const res = await fetch(`${BACKEND_URL}${path}`, { ...init, cache: 'no-store' });
+    const body = await res.text();
+    return new Response(body, {
+      status: res.status,
+      headers: {
+        'Content-Type': res.headers.get('content-type') ?? 'application/json',
+      },
+    });
+  } catch {
+    return new Response(JSON.stringify({ error: 'backend offline' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}

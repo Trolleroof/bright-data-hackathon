@@ -31,12 +31,13 @@ class Intrinsics:
 class Camera:
     """Thin cv2.VideoCapture wrapper that knows its own intrinsics."""
 
-    def __init__(self, index: int = 0, width: int = 1280, height: int = 720, fov_deg: float = 60.0) -> None:
+    def __init__(self, index: int = 0, width: int = 1280, height: int = 720, fps: int = 60, fov_deg: float = 60.0) -> None:
         self._cap = cv2.VideoCapture(index)
         if not self._cap.isOpened():
             raise RuntimeError(f"camera {index} did not open (check macOS camera permission)")
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self._cap.set(cv2.CAP_PROP_FPS, fps)
         self.width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH) or width)
         self.height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or height)
         self.intrinsics = Intrinsics.guess(self.width, self.height, fov_deg)

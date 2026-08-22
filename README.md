@@ -69,6 +69,12 @@ holds the cube, where the camera says it is, and where the skill cursor is. Edit
 `outputs/skill_spec.json` while the tab is open and the hot-swap counter ticks —
 that is the zero-downtime claim, visible.
 
+The **FLIGHT RECORDER** tab includes a **CHECK RUNNER** dock at the bottom.
+It runs `check_setup`, `check_vision`, `run_skill`, and `run_factory --smoke`
+headless — one at a time or all four via **RUN ALL** — and streams stdout live
+with per-check PASS/FAIL and timings. Camera entry points (`mjpython -m twin.sim
+--camera`) stay terminal-only because they need the native viewer.
+
 Without the Python service the UI still loads and says so; the trace waterfall
 falls back to its canonical demo traces. Point the UI at a backend on another
 host with `BIDEX_BACKEND_URL`.

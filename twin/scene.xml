@@ -2,6 +2,9 @@
   <!-- Original calibrated SO-101 MJCF and STL meshes, vendored from SO101-Nexus. -->
   <include file="assets/so101/so101_new_calib.xml"/>
   <option timestep="0.002" gravity="0 0 -9.81"/>
+  <visual>
+    <global offwidth="1280" offheight="720"/>
+  </visual>
 
   <!-- Offscreen buffer for the headless web render (twin/live.py). -->
   <visual>
