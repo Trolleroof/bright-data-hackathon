@@ -1,6 +1,6 @@
 # Bidex — setup
 
-Twin window + Port / SigNoz / Bright Data stubs. Demo loop is not built yet.
+Twin window + Port / Bright Data stubs and local OpenTelemetry tracing. Demo loop is not built yet.
 
 ```bash
 cd /Users/nikhi/zero-downtime-hackathon
@@ -58,7 +58,6 @@ Fill `.env` when you have them:
 
 | Key | Where |
 |---|---|
-| `SIGNOZ_ENDPOINT`, `SIGNOZ_INGESTION_KEY` | SigNoz → Settings → Ingestion |
 | `PORT_CLIENT_ID`, `PORT_CLIENT_SECRET` | Port → profile → Credentials |
 | `BRIGHTDATA_API_TOKEN`, `BRIGHTDATA_SERP_ZONE`, `BRIGHTDATA_UNLOCKER_ZONE` | Bright Data → API token + a SERP zone + a Web Unlocker zone |
 | `APRILTAG_SIZE_CM` | ruler, outer black square after you tape the tag |

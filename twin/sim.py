@@ -23,11 +23,13 @@ import numpy as np
 from engine.runner import Runner, Setpoint
 from engine.spec import SpecError, load
 from integrations.config import load_settings
-from integrations.signoz import record_event, span, tracer_ready
+from integrations.tracing import record_event, span, tracer_ready
 
 SCENE = Path(__file__).with_name("scene.xml")
 TABLE_TOP_Z = 0.76
 CUBE_HALF = 0.025
+HUD_W, HUD_H = 480, 270
+LETTER_TAG_CM = 15.3
 
 
 def _cube_xy(model: mujoco.MjModel, data: mujoco.MjData) -> tuple[float, float]:
@@ -104,6 +106,41 @@ class SkillDriver:
         mujoco.mj_forward(model, data)
 
 
+def _size_tag_to_env(model: mujoco.MjModel, tag_size_m: float) -> None:
+    """Keep the black square in sim the same size as APRILTAG_SIZE_CM."""
+    if tag_size_m <= 0:
+        return
+    geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "apriltag")
+    model.geom_size[geom][0] = tag_size_m / 2.0
+    model.geom_size[geom][1] = tag_size_m / 2.0
+
+
+def _overlay(viewer, result, world_xy: tuple[float, float] | None, tag_cm: str, hud, cv2) -> None:
+    """Camera picture + numbers inside the MuJoCo window (no OpenCV window)."""
+    tag = "YES" if result.tag_seen else "NO"
+    cube = f"{world_xy[0]:+.3f}  {world_xy[1]:+.3f}" if world_xy else "--"
+    raw = (
+        f"{result.cube_xy[0]:+.3f}  {result.cube_xy[1]:+.3f}"
+        if result.cube_xy
+        else "--"
+    )
+    viewer.set_texts(
+        (
+            mujoco.mjtFontScale.mjFONTSCALE_150,
+            mujoco.mjtGridPos.mjGRID_TOPLEFT,
+            "tag\ncube world\ncube tag\nscale\nlatency",
+            f"{tag}\n{cube}\n{raw}\n{tag_cm} cm\n{result.latency_ms:.0f} ms",
+        )
+    )
+    if result.frame is None or cv2 is None:
+        return
+    frame = hud.draw(result)
+    if frame is None:
+        return
+    rgb = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (HUD_W, HUD_H))
+    viewer.set_images((mujoco.MjrRect(16, 16, HUD_W, HUD_H), rgb))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--camera", action="store_true", help="run track_cube from the webcam")
@@ -116,6 +153,7 @@ def main() -> None:
 
     settings = load_settings()
     model = mujoco.MjModel.from_xml_path(str(SCENE))
+    _size_tag_to_env(model, settings.apriltag_size_m)
     data = mujoco.MjData(model)
 
     # Parked pose: arm reaches slightly over the table, not a skill.
@@ -149,9 +187,19 @@ def main() -> None:
     tag_cm = settings.apriltag_size_cm or "?"
     mode = "track_cube" if args.camera else "skill engine" if args.skill else "sim only"
     print(f"twin running  |  prompt=IDLE  |  {mode}  |  close the window to quit")
-    print(f"tag size in .env: {tag_cm} cm  |  SigNoz tracer: {tracer_ready()}")
+    print(f"tag size in .env: {tag_cm} cm  |  tracer: {tracer_ready()}")
+    try:
+        configured = float(settings.apriltag_size_cm)
+    except ValueError:
+        configured = 0.0
+    if args.camera and configured and abs(configured - LETTER_TAG_CM) > 2.0:
+        print(
+            f"  scale warning: letter print at 100% is {LETTER_TAG_CM} cm; "
+            f".env has {configured} cm"
+        )
 
     last_log = 0.0
+    hud_ok = hud is not None and not args.no_hud
     with span("update_twin", prompt_state="IDLE"):
         pass
 
@@ -161,8 +209,9 @@ def main() -> None:
                 step_start = time.time()
 
                 result = tracker.latest if tracker is not None else None
+                world_xy = None
                 if result is not None and result.cube_xy is not None and anchor is not None:
-                    anchor.apply(data, result.cube_xy)
+                    world_xy = anchor.apply(data, result.cube_xy)
                 if runner is not None and driver is not None:
                     if not runner.finished:
                         setpoint = runner.tick(data.time)
@@ -185,13 +234,24 @@ def main() -> None:
                         print(f"skill spec rejected; keeping current skill: {exc}")
 
                 mujoco.mj_step(model, data)
+                if result is not None and hud is not None:
+                    try:
+                        _overlay(viewer, result, world_xy, tag_cm, hud, cv2)
+                    except Exception as exc:  # noqa: BLE001 — overlay must not kill the twin
+                        if hud_ok:
+                            print(f"  overlay skipped: {exc}")
+                            hud_ok = False
                 viewer.sync()
 
-                if hud is not None and result is not None and not args.no_hud:
+                if args.camera and not args.no_hud and hud_ok and result is not None and cv2 is not None:
                     frame = hud.draw(result)
                     if frame is not None:
-                        cv2.imshow("Bidex — track_cube", frame)
-                        cv2.waitKey(1)
+                        try:
+                            cv2.imshow("Bidex — track_cube", frame)
+                            cv2.waitKey(1)
+                        except cv2.error:
+                            args.no_hud = True
+                            print("  OpenCV window off (mjpython). Camera stays in the MuJoCo overlay.")
 
                 now = time.time()
                 if now - last_log > 2.0:

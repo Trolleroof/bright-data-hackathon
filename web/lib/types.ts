@@ -50,9 +50,7 @@ export interface TraceTree {
 
 export interface BackendStatus {
   service: string;
-  tracer_mode: 'signoz' | 'console' | string;
-  signoz_endpoint: string | null;
-  signoz_ready: boolean;
+  tracer_mode: 'local' | string;
   port_ready: boolean;
   brightdata_ready: boolean;
   total_spans: number;

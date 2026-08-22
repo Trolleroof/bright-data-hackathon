@@ -87,14 +87,12 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          {/* SigNoz Pill */}
+          {/* Tracing Pill */}
           <div className="flex items-center gap-1.5 rounded-full border border-obsidian-750 bg-obsidian-850 px-3 py-1 text-xs text-slate-300">
             <Radio className="h-3.5 w-3.5 text-hud-violet" />
             <span className="font-mono text-[11px] text-slate-300">
-              SIGNOZ :{' '}
-              <strong className="text-slate-100">
-                {status?.signoz_ready ? 'OTLP READY' : 'LOCAL ENGINE'}
-              </strong>
+              TRACING :{' '}
+              <strong className="text-slate-100">LOCAL ENGINE</strong>
             </span>
           </div>
         </div>

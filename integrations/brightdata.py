@@ -7,7 +7,7 @@ URL, Web Unlocker fetches the page past anti-bot/JS walls, and extract() pulls
 schema.org Product JSON-LD when the page has it, text heuristics otherwise.
 
 Every result carries `source` (live | fixture) and `latency_ms` so the HUD and
-SigNoz can show, not claim, whether a scrape actually happened. The fixture at
+the trace timeline can show, not claim, whether a scrape actually happened. The fixture at
 brightdata/fixtures/bottle.json is a labeled fallback, not a silent one — a
 caller must not treat a fixture result as indistinguishable from a live one.
 """
@@ -28,6 +28,8 @@ from integrations.config import ROOT, Settings, load_settings
 
 RULES_PATH = ROOT / "brightdata" / "rules.yaml"
 FIXTURE_PATH = ROOT / "brightdata" / "fixtures" / "bottle.json"
+_SERP_ATTEMPTS = 3
+_SERP_RETRY_S = 1.0
 
 BRIGHTDATA_REQUEST_URL = "https://api.brightdata.com/request"
 _TIMEOUT_S = 25
@@ -64,14 +66,26 @@ def _headers(settings: Settings) -> dict[str, str]:
 def search(query: str, settings: Settings, limit: int = 5) -> list[str]:
     """SERP API: query -> ranked candidate URLs. Proves we didn't type the URL."""
     target = f"https://www.google.com/search?q={requests.utils.quote(query)}&brd_json=1"
-    res = requests.post(
-        BRIGHTDATA_REQUEST_URL,
-        headers=_headers(settings),
-        json={"zone": settings.brightdata_serp_zone, "url": target, "format": "raw"},
-        timeout=_TIMEOUT_S,
-    )
-    res.raise_for_status()
-    payload = res.json()
+    # The SERP endpoint intermittently answers 200 with an empty body. That is a
+    # transient blank, not a real "no results", so retry before believing it.
+    payload = None
+    for attempt in range(_SERP_ATTEMPTS):
+        res = requests.post(
+            BRIGHTDATA_REQUEST_URL,
+            headers=_headers(settings),
+            json={"zone": settings.brightdata_serp_zone, "url": target, "format": "raw"},
+            timeout=_TIMEOUT_S,
+        )
+        res.raise_for_status()
+        if res.text.strip():
+            payload = res.json()
+            break
+        if attempt + 1 < _SERP_ATTEMPTS:
+            time.sleep(_SERP_RETRY_S)
+    if payload is None:
+        raise BrightDataError(
+            f"SERP API returned an empty body {_SERP_ATTEMPTS}x for {query!r}"
+        )
 
     urls: list[str] = []
     for key in ("organic", "shopping", "results"):
@@ -189,7 +203,7 @@ def lookup(label: str, settings: Settings | None = None) -> dict[str, Any]:
     """search -> fetch -> extract, with a labeled fixture fallback on any failure.
 
     Always returns required_fields (backfilled from the fixture if a live
-    result is missing them) plus source/url/latency_ms for the HUD/SigNoz.
+    result is missing them) plus source/url/latency_ms for the HUD/traces.
     """
     settings = settings or load_settings()
     rules = load_rules()

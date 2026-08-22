@@ -1,4 +1,4 @@
-"""SigNoz via OTLP/HTTP + in-memory flight recorder for live HUD/timeline.
+"""In-memory OpenTelemetry flight recorder for the live HUD/timeline.
 
 Emits full demo spans:
 detect -> tag_pose -> update_twin -> extract_params -> scrape -> patch_spec -> test -> approve -> skill_exec
@@ -19,9 +19,10 @@ from typing import Any, Iterator
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from integrations.config import load_settings
+
+DEPLOYMENT_ENVIRONMENT = "local"
 
 _booted = False
 _lock = threading.Lock()
@@ -173,34 +174,20 @@ def _boot() -> None:
         provider = TracerProvider(
             resource=Resource.create({
                 "service.name": settings.otel_service_name,
-                "deployment.environment": "production" if settings.signoz_ready else "development",
+                "deployment.environment": DEPLOYMENT_ENVIRONMENT,
             })
         )
-        # Always add our in-memory local collector
+        # The in-memory local collector is the only span processor: spans stay
+        # in this process and are served to the web UI.
         provider.add_span_processor(LocalSpanCollector())
-
-        if settings.signoz_ready:
-            try:
-                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-                endpoint = settings.signoz_endpoint.rstrip("/")
-                if not endpoint.endswith("/v1/traces"):
-                    endpoint = f"{endpoint}/v1/traces"
-                exporter = OTLPSpanExporter(
-                    endpoint=endpoint,
-                    headers={"signoz-ingestion-key": settings.signoz_ingestion_key},
-                )
-                provider.add_span_processor(BatchSpanProcessor(exporter))
-            except Exception as exc:
-                print(f"[SigNoz] OTLP exporter init warning: {exc}")
 
         trace.set_tracer_provider(provider)
         _booted = True
 
 
 def tracer_ready() -> str:
-    settings = load_settings()
-    return "signoz" if settings.signoz_ready else "console"
+    """Tracing is always the in-process local collector."""
+    return "local"
 
 
 def get_tracer():

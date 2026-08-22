@@ -5,7 +5,7 @@ Serves the telemetry HUD & Trace Waterfall UI, plus live OpenTelemetry trace API
 - GET  /api/traces/stream   -> Server-Sent Events (SSE) live span feed
 - POST /api/traces/demo     -> Emits a full demo trace tree (Run A or Run B)
 - POST /api/traces/clear    -> Clears recorded spans
-- GET  /api/status         -> Service status, SigNoz readiness, counters
+- GET  /api/status         -> Service status, tracer readiness, counters
 - GET  /*                  -> Static UI assets
 """
 
@@ -27,7 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from integrations.config import load_settings
-from integrations.signoz import (
+from integrations.tracing import (
     clear_spans,
     emit_demo_trace,
     get_raw_spans,
@@ -117,8 +117,6 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
         self._send_json({
             "service": settings.otel_service_name,
             "tracer_mode": tracer_ready(),
-            "signoz_endpoint": settings.signoz_endpoint if settings.signoz_ready else None,
-            "signoz_ready": settings.signoz_ready,
             "port_ready": settings.port_ready,
             "brightdata_ready": settings.brightdata_ready,
             "total_spans": len(spans),

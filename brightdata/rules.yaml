@@ -6,11 +6,11 @@
 # No collector id, no CSS selectors — pages are read, not hand-wired.
 
 # Query template used when the camera/Lens step only has a rough label, not a name.
-search_query_template: "{label} dimensions weight"
+search_query_template: "ikea {label} product dimensions"
 
 # Last-resort URL if search returns nothing usable. Not the primary path —
 # if this is what fires on stage, say so on the HUD, do not hide it.
-fallback_catalog_url: https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/
+fallback_catalog_url: https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-20480013/
 
 # Fields the factory requires to ship a geom. `extract()` returns what it
 # finds; anything missing here falls back to the fixture value for that field.

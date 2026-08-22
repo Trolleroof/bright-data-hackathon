@@ -14,7 +14,7 @@ import mujoco
 from integrations.brightdata import smoke as brightdata_smoke
 from integrations.config import load_settings
 from integrations.port import smoke as port_smoke
-from integrations.signoz import smoke as signoz_smoke
+from integrations.tracing import smoke as tracing_smoke
 
 
 def check_twin() -> str:
@@ -55,7 +55,7 @@ def main() -> int:
     checks = [
         ("twin", check_twin),
         ("vision", check_vision),
-        ("signoz", signoz_smoke),
+        ("tracing", tracing_smoke),
         ("port", port_smoke),
         ("brightdata", brightdata_smoke),
     ]
@@ -69,7 +69,7 @@ def main() -> int:
 
     print("Bidex setup")
     print(f"  tag cm: {settings.apriltag_size_cm or '(not set)'}")
-    print(f"  keys: signoz={settings.signoz_ready} port={settings.port_ready} brightdata={settings.brightdata_ready}")
+    print(f"  keys: port={settings.port_ready} brightdata={settings.brightdata_ready}")
     print()
     width = max(len(name) for name, _, _ in rows)
     for name, status, detail in rows:
