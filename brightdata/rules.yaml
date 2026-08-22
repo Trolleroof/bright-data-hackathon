@@ -1,20 +1,35 @@
-# Bright Data Scraper Studio settings for Bidex.
-# The camera does not classify objects. This file aims the scraper.
+# Bright Data settings for Bidex.
+# The camera does not classify objects and cannot see mass. This file tells
+# the discovery pipeline what to search for and what a usable result looks like.
+#
+# Flow: search(query) -> candidate URLs -> fetch(url) via Web Unlocker -> extract(html).
+# No collector id, no CSS selectors — pages are read, not hand-wired.
 
-collector_id_env: BRIGHTDATA_COLLECTOR_ID
-catalog_url_env: BRIGHTDATA_CATALOG_URL
+# Query template used when the camera/Lens step only has a rough label, not a name.
+search_query_template: "{label} dimensions weight"
 
-# Demo contract: you put down a water bottle. This page supplies name + size.
-default_catalog_url: https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/
+# Last-resort URL if search returns nothing usable. Not the primary path —
+# if this is what fires on stage, say so on the HUD, do not hide it.
+fallback_catalog_url: https://www.ikea.com/us/en/p/ikea-365-water-bottle-dark-gray-70478228/
 
-# Fields the factory will require later. Setup only checks they exist in JSON.
+# Fields the factory requires to ship a geom. `extract()` returns what it
+# finds; anything missing here falls back to the fixture value for that field.
 required_fields:
   - name
   - height_cm
   - width_cm
 
-# Selectors live here so scraper-repair can edit them later (not used in setup).
-selectors:
-  name: "h1"
-  height_cm: "[data-measurement='height']"
-  width_cm: "[data-measurement='width']"
+# Optional physics fields — feed density/friction, not required to ship a geom.
+physics_fields:
+  - weight_g
+  - material
+
+material_density_kg_m3:
+  glass: 2500
+  stainless_steel: 8000
+  aluminum: 2700
+  plastic: 950
+  ceramic: 2300
+  cardboard: 700
+  rubber: 1200
+  wood: 600
