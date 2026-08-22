@@ -27,11 +27,12 @@ def raw_stdin() -> Iterator[None]:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-def poll() -> int:
+def poll(*, use_cv2: bool = True) -> int:
     """Return a key code, or -1 if nothing pressed. HUD window or terminal."""
-    key = cv2.waitKey(1) & 0xFF
-    if key != 255:
-        return key
+    if use_cv2:
+        key = cv2.waitKey(1) & 0xFF
+        if key != 255:
+            return key
     if not sys.stdin.isatty():
         return -1
     ready, _, _ = select.select([sys.stdin], [], [], 0)

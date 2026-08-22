@@ -20,6 +20,8 @@ def build_steps(params: ExtractedParams, catalog: dict[str, Any] | None = None) 
                 {"op": "release"},
             ]
         )
+    elif params.motion == "replay_trajectory":
+        steps.append({"op": "replay_trajectory", "path": params.path})
     else:
         steps.append(
             {

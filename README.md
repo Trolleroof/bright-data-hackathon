@@ -21,13 +21,21 @@ write the result onto the cube in MuJoCo. Walk the camera, the cube stays put.
 ```bash
 python scripts/check_vision.py    # geometry proof, no camera needed
 python -m vision.track            # camera + HUD (tag seen / cube x,y / latency)
-python -m twin.sim --camera       # the twin, with the cube tracked
+mjpython -m twin.sim --camera     # twin + track + record + factory + skill
 ```
 
 Measure the outer black square of the printed tag and put it in `.env` as
 `APRILTAG_SIZE_CM` — that is the only scale the pipeline has. Optional camera
 tuning (`CAMERA_INDEX`, `CAMERA_FOV_DEG`, `CUBE_TRACK_HEIGHT_CM`) is in
 `.env.example`. macOS will ask for camera permission the first time.
+
+With `--camera`, keys go in **this terminal** (not the MuJoCo window):
+
+| Key | Action |
+|---|---|
+| `R` | Start/stop recording (~3–12 s push) → fast-path factory on stop |
+| `F` | Append avoid step from last bag (Run B) |
+| `S` | Run the skill spec in sim (after factory PASS) |
 
 Missing sponsor keys = that row says skipped. The sim still opens.
 
