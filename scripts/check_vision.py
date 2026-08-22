@@ -10,6 +10,8 @@ Two lighting cases, because they fail differently:
 * `top` — the sides are shadowed and only the top square passes the threshold.
   This one is the drift you notice by eye: the blob floats a cube-height above
   the table, so a naive back-projection slides with the camera angle.
+* `partial` — what a real desk actually gives you: the top plus the lit side,
+  with the shadowed side bitten out of the outline.
 """
 
 from __future__ import annotations
@@ -35,7 +37,9 @@ TAG_SIZE_M = 0.15
 CUBE_HALF_M = 0.025
 CUBE_XY = (0.18, -0.12)  # truth, in the tag frame
 PLANE_Z = CUBE_HALF_M
-TOLERANCE_M = 0.005
+# A blob that is exactly one of the two hypotheses solves to well under a
+# millimetre. A partly shadowed one sits between them, so it gets more room.
+TOLERANCE_M = {"silhouette": 0.005, "top": 0.005, "partial": 0.010}
 
 # Camera poses: (eye, target) in the tag frame. Walking around the table.
 POSES = [
@@ -94,15 +98,26 @@ def render(rotation, translation, matrix, surface: str) -> np.ndarray:
     # too dark to pass the colour threshold.
     cx, cy = CUBE_XY
     size = 2 * CUBE_HALF_M
-    heights = (size,) if surface == "top" else (0.0, size)
-    corners = np.array(
-        [
-            [cx + sx * CUBE_HALF_M, cy + sy * CUBE_HALF_M, z]
-            for sx in (-1.0, 1.0)
-            for sy in (-1.0, 1.0)
-            for z in heights
-        ]
-    )
+    top = [
+        [cx + sx * CUBE_HALF_M, cy + sy * CUBE_HALF_M, size]
+        for sx in (-1.0, 1.0)
+        for sy in (-1.0, 1.0)
+    ]
+    base = [
+        [cx + sx * CUBE_HALF_M, cy + sy * CUBE_HALF_M, 0.0]
+        for sx in (-1.0, 1.0)
+        for sy in (-1.0, 1.0)
+    ]
+    if surface == "top":
+        corners = np.array(top)
+    elif surface == "partial":
+        # Only the two base corners closest to the camera survive: the far side
+        # of the cube is in shadow and never passes the colour threshold.
+        eye = (-rotation.T @ translation).reshape(3)
+        nearest = sorted(base, key=lambda c: np.linalg.norm(np.array(c) - eye))[:2]
+        corners = np.array(top + nearest)
+    else:
+        corners = np.array(top + base)
     pts = _project(corners, rotation, translation, matrix).astype(np.float32)
     cv2.fillConvexPoly(frame, cv2.convexHull(pts).astype(int), (35, 35, 205))
     return frame
@@ -115,7 +130,7 @@ def main() -> int:
     failed = False
 
     for surface, (i, (eye, target)) in [
-        (s, p) for s in ("silhouette", "top") for p in enumerate(POSES)
+        (s, p) for s in ("silhouette", "top", "partial") for p in enumerate(POSES)
     ]:
         rotation, translation = _look_at(eye, target)
         frame = render(rotation, translation, intrinsics.matrix, surface)
@@ -136,7 +151,13 @@ def main() -> int:
             failed = True
             continue
         fit = fit_cube(
-            tag, (blob.u, blob.v), blob.area_px, intrinsics.matrix, 2 * CUBE_HALF_M, seed
+            tag,
+            (blob.u, blob.v),
+            blob.area_px,
+            intrinsics.matrix,
+            2 * CUBE_HALF_M,
+            seed,
+            blob.contour,
         )
         if fit is None:
             rows.append((label, "FAIL", "surface solve did not converge"))
@@ -145,7 +166,7 @@ def main() -> int:
         xy = fit.xy
         error = float(np.hypot(xy[0] - CUBE_XY[0], xy[1] - CUBE_XY[1]))
         naive = float(np.hypot(seed[0] - CUBE_XY[0], seed[1] - CUBE_XY[1]))
-        ok = error <= TOLERANCE_M
+        ok = error <= TOLERANCE_M[surface]
         failed = failed or not ok
         rows.append(
             (
@@ -157,7 +178,9 @@ def main() -> int:
         )
 
     print("track_cube geometry (synthetic, no camera)")
-    print(f"  truth: cube at {CUBE_XY[0]:+.3f} {CUBE_XY[1]:+.3f} m, tolerance {TOLERANCE_M * 100:.1f} cm")
+    tolerances = "  ".join(f"{k} {v * 100:.1f} cm" for k, v in TOLERANCE_M.items())
+    print(f"  truth: cube at {CUBE_XY[0]:+.3f} {CUBE_XY[1]:+.3f} m")
+    print(f"  tolerance: {tolerances}")
     print()
     for name, status, detail in rows:
         print(f"  {name}  {status:4}  {detail}")

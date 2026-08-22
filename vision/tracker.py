@@ -120,7 +120,9 @@ class CubeTracker:
         seed = _pixel_to_plane(tag, blob.u, blob.v, matrix, self.plane_z_m)
         if seed is None:
             return None, "?"
-        fit = fit_cube(tag, (blob.u, blob.v), blob.area_px, matrix, self.cube_size_m, seed)
+        fit = fit_cube(
+            tag, (blob.u, blob.v), blob.area_px, matrix, self.cube_size_m, seed, blob.contour
+        )
         if fit is None:
             return seed, "raw"  # solve failed: the plane hit beats nothing
         return fit.xy, fit.surface

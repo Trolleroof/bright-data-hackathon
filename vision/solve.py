@@ -33,7 +33,7 @@ _TOLERANCE_PX = 0.3
 class CubeFit:
     xy: tuple[float, float]
     surface: str  # "silhouette" or "top"
-    area_ratio: float  # predicted / measured; 1.0 is a perfect explanation
+    score: float  # overlap with the measured blob, 0..1; higher is a better explanation
 
 
 def project(tag: TagPose, points_tag: np.ndarray, camera_matrix: np.ndarray) -> np.ndarray | None:
@@ -43,6 +43,29 @@ def project(tag: TagPose, points_tag: np.ndarray, camera_matrix: np.ndarray) -> 
         return None
     uv = (camera_matrix @ cam.T).T
     return uv[:, :2] / uv[:, 2:3]
+
+
+def _overlap(predicted_uv: np.ndarray, contour: np.ndarray) -> float:
+    """IoU between the predicted cube outline and the measured blob.
+
+    Shape, not just size: a blob that lost a shadowed face still overlaps the
+    full silhouette far better than it overlaps the top square alone.
+    """
+    both = np.vstack([predicted_uv.reshape(-1, 2), contour.reshape(-1, 2)]).astype(np.float64)
+    low = np.floor(both.min(axis=0)).astype(int)
+    high = np.ceil(both.max(axis=0)).astype(int)
+    size = high - low + 1
+    if np.any(size <= 0) or np.any(size > 4000):
+        return 0.0
+    canvas = (int(size[1]), int(size[0]))
+    predicted_mask = np.zeros(canvas, dtype=np.uint8)
+    measured_mask = np.zeros(canvas, dtype=np.uint8)
+    cv2.fillConvexPoly(predicted_mask, (cv2.convexHull(predicted_uv.astype(np.float32)) - low).astype(int), 1)
+    cv2.drawContours(measured_mask, [(contour.reshape(-1, 2) - low).astype(int)], -1, 1, cv2.FILLED)
+    union = int(np.count_nonzero(predicted_mask | measured_mask))
+    if union == 0:
+        return 0.0
+    return float(np.count_nonzero(predicted_mask & measured_mask)) / union
 
 
 def _corners(x: float, y: float, size_m: float, surface: str) -> np.ndarray:
@@ -113,8 +136,13 @@ def fit_cube(
     camera_matrix: np.ndarray,
     size_m: float,
     seed_xy: tuple[float, float],
+    contour: np.ndarray | None = None,
 ) -> CubeFit | None:
-    """Best x,y for the blob, choosing the surface hypothesis that fits its area."""
+    """Best x,y for the blob, choosing the surface hypothesis that explains it.
+
+    With a contour we score by outline overlap, which survives a partly
+    shadowed cube. Without one we fall back to comparing areas.
+    """
     measured = np.array(measured_uv, dtype=np.float64)
     best: CubeFit | None = None
     for surface in ("silhouette", "top"):
@@ -124,8 +152,13 @@ def fit_cube(
         xy, area = solved
         if area <= 0 or measured_area_px <= 0:
             continue
-        ratio = area / measured_area_px
-        candidate = CubeFit(xy=xy, surface=surface, area_ratio=ratio)
-        if best is None or abs(np.log(ratio)) < abs(np.log(best.area_ratio)):
+        if contour is not None:
+            uv = project(tag, _corners(xy[0], xy[1], size_m, surface), camera_matrix)
+            score = 0.0 if uv is None else _overlap(uv, contour)
+        else:
+            ratio = area / measured_area_px
+            score = float(min(ratio, 1.0 / ratio))
+        candidate = CubeFit(xy=xy, surface=surface, score=score)
+        if best is None or candidate.score > best.score:
             best = candidate
     return best

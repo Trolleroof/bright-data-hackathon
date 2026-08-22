@@ -7,10 +7,12 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-# Red wraps around the hue circle, so it takes two bands.
-_LOW_1 = np.array([0, 120, 70], dtype=np.uint8)
+# Red wraps around the hue circle, so it takes two bands. The value floor is
+# low on purpose: a shadowed cube face is still red, and dropping it bites a
+# chunk out of the outline the pose solve has to explain.
+_LOW_1 = np.array([0, 120, 50], dtype=np.uint8)
 _HIGH_1 = np.array([10, 255, 255], dtype=np.uint8)
-_LOW_2 = np.array([170, 120, 70], dtype=np.uint8)
+_LOW_2 = np.array([170, 120, 50], dtype=np.uint8)
 _HIGH_2 = np.array([180, 255, 255], dtype=np.uint8)
 
 _KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
