@@ -14,17 +14,21 @@ export async function POST(req: Request) {
     // default to A
   }
 
-  // Attempt backend proxy
+  // Use the real backend when it is available; synthesize only as a fallback.
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 600);
-    fetch('http://127.0.0.1:8080/api/traces/demo', {
+    const backendRes = await fetch('http://127.0.0.1:8080/api/traces/demo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ run: runType }),
       signal: controller.signal,
-    }).catch(() => {});
+      cache: 'no-store',
+    });
     clearTimeout(timeoutId);
+    if (backendRes.ok) {
+      return NextResponse.json(await backendRes.json());
+    }
   } catch {
     // ignore
   }

@@ -28,9 +28,9 @@ export async function GET() {
     service: 'bidex',
     tracer_mode: 'signoz',
     signoz_endpoint: 'http://localhost:4318/v1/traces',
-    signoz_ready: true,
-    port_ready: true,
-    brightdata_ready: true,
+    signoz_ready: false,
+    port_ready: false,
+    brightdata_ready: false,
     total_spans: totalSpans,
     total_traces: traces.length,
   });
