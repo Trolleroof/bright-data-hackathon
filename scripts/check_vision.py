@@ -1,12 +1,12 @@
 """Prove track_cube geometry without a camera.
 
-Renders a synthetic table: an AprilTag at the origin and a red cube at a known
+Renders a synthetic table: an AprilTag at the origin and a lime-green cube at a known
 spot, seen from several camera poses. The recovered x,y must match the truth
 from every pose — that is exactly "walk the camera, the cube stays planted".
 
 Two lighting cases, because they fail differently:
 
-* `silhouette` — the whole cube reads red.
+* `silhouette` — the whole cube reads lime green.
 * `top` — the sides are shadowed and only the top square passes the threshold.
   This one is the drift you notice by eye: the blob floats a cube-height above
   the table, so a naive back-projection slides with the camera angle.
@@ -27,7 +27,7 @@ import cv2
 import numpy as np
 
 from vision.camera import Intrinsics
-from vision.cube import find_red_blob
+from vision.cube import find_cube_blob
 from vision.tag import TagDetector
 from vision.solve import fit_cube
 from vision.tracker import _pixel_to_plane
@@ -94,7 +94,7 @@ def render(rotation, translation, matrix, surface: str) -> np.ndarray:
     cv2.fillConvexPoly(mask, dst.astype(int), 255)
     frame[mask > 0] = warped[mask > 0]
 
-    # Red cube: either its full outline, or just the top face when the sides are
+    # Lime-green cube: either its full outline, or just the top face when the sides are
     # too dark to pass the colour threshold.
     cx, cy = CUBE_XY
     size = 2 * CUBE_HALF_M
@@ -119,7 +119,7 @@ def render(rotation, translation, matrix, surface: str) -> np.ndarray:
     else:
         corners = np.array(top + base)
     pts = _project(corners, rotation, translation, matrix).astype(np.float32)
-    cv2.fillConvexPoly(frame, cv2.convexHull(pts).astype(int), (35, 35, 205))
+    cv2.fillConvexPoly(frame, cv2.convexHull(pts).astype(int), (50, 255, 50))
     return frame
 
 
@@ -140,9 +140,9 @@ def main() -> int:
             rows.append((label, "FAIL", "tag 0 not detected"))
             failed = True
             continue
-        blob = find_red_blob(frame)
+        blob = find_cube_blob(frame)
         if blob is None:
-            rows.append((label, "FAIL", "red blob not found"))
+            rows.append((label, "FAIL", "lime cube blob not found"))
             failed = True
             continue
         seed = _pixel_to_plane(tag, blob.u, blob.v, intrinsics.matrix, PLANE_Z)

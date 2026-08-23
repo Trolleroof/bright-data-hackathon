@@ -1,16 +1,15 @@
 """Bounding-box pass: the largest non-cube object on the table, with a label.
 
-`vision/cube.py` finds the red cube because the skill needs its centroid. This
+`vision/cube.py` finds the lime-green cube because the skill needs its centroid. This
 module answers a different question — "is there something else in frame we do
 not have geometry for?" — and answers it as a box plus a coarse label, because
 that is what the import flow needs: a rectangle to draw on the HUD, and a
 string to search the 3D-asset web with.
 
 Labelling is colour + aspect ratio, nothing more. That is honest about what a
-webcam heuristic can do, and it is enough for the one case the demo hardcodes:
-a **grey water bottle** — desaturated, upright, roughly 2.5-3.5x taller than
-wide. Everything else gets a generic shape label ("blue bottle", "dark box")
-and goes through the real Bright Data mesh ladder instead of the shortcut.
+webcam heuristic can do: an upright bottle becomes a searchable water-bottle
+query, while other blobs get a generic shape label and use the same import
+ladder.
 """
 
 from __future__ import annotations
@@ -20,11 +19,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from vision.cube import red_mask
-
-# The hardcoded case. `matches_hardcoded()` is the single place that decides
-# whether the shortcut fires, so the import service never re-derives it.
-GRAY_BOTTLE_LABEL = "gray water bottle"
+from vision.cube import cube_mask
 
 _KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
 
@@ -37,6 +32,16 @@ _GRAY_V_MAX = 205
 # A bottle standing on a table: clearly taller than wide, but not a pen.
 _BOTTLE_MIN_ASPECT = 1.9
 _BOTTLE_MAX_ASPECT = 5.0
+
+# An object sitting on the table occupies a modest part of the frame. Anything
+# bigger is the room: the wall behind the table, the table itself, or a
+# lighting gradient the adaptive threshold latched onto. Those used to become a
+# permanent "import this?" prompt for a box the size of the picture.
+_MAX_AREA_FRAC = 0.30
+# ...and it is framed, not cut off. A blob running off three sides of the
+# picture is the background with a hole in it, whatever its area.
+_MAX_EDGES_TOUCHED = 2
+_EDGE_SLACK_PX = 3
 
 _HUE_NAMES = (
     (10, "red"), (25, "orange"), (35, "yellow"), (85, "green"),
@@ -57,8 +62,8 @@ class Detection:
 
     @property
     def hardcoded(self) -> bool:
-        """True when this is the grey-bottle case the demo ships a stub for."""
-        return matches_hardcoded(self.label)
+        """Compatibility field; all detected objects use the searchable path."""
+        return False
 
     def as_json(self) -> dict:
         return {
@@ -70,12 +75,6 @@ class Detection:
             "is_gray": self.is_gray,
             "hardcoded": self.hardcoded,
         }
-
-
-def matches_hardcoded(label: str) -> bool:
-    """Whether `label` is the grey water bottle we import without a download."""
-    text = label.lower()
-    return ("gray" in text or "grey" in text) and "bottle" in text
 
 
 def _hue_name(hue: float) -> str:
@@ -102,10 +101,30 @@ def _label_for(frame_hsv: np.ndarray, mask: np.ndarray, aspect: float) -> tuple[
     return f"{colour} {shape}", is_gray
 
 
-def detect_object(frame: np.ndarray, min_area_px: float = 2500.0) -> Detection | None:
-    """Largest foreground blob that is not the red cube, as a labelled box.
+def _is_background(bbox: tuple[int, int, int, int], area: float, shape: tuple[int, ...]) -> bool:
+    """True when a blob is the room rather than something standing on the table."""
+    x, y, w, h = bbox
+    frame_h, frame_w = shape[:2]
+    if area > _MAX_AREA_FRAC * frame_w * frame_h:
+        return True
+    edges = sum(
+        (
+            x <= _EDGE_SLACK_PX,
+            y <= _EDGE_SLACK_PX,
+            x + w >= frame_w - _EDGE_SLACK_PX,
+            y + h >= frame_h - _EDGE_SLACK_PX,
+        )
+    )
+    return edges > _MAX_EDGES_TOUCHED
 
-    Returns None on an empty table. Everything here is deliberately cheap: it
+
+def detect_object(
+    frame: np.ndarray, min_area_px: float = 2500.0, max_area_frac: float = _MAX_AREA_FRAC
+) -> Detection | None:
+    """Largest table-sized foreground blob that is not the cube, as a labelled box.
+
+    Returns None on an empty table, and — just as importantly — None when the
+    biggest blob is the background. Everything here is deliberately cheap: it
     runs on the same thread as the tracker, a few times a second.
     """
     if frame is None or frame.size == 0:
@@ -122,21 +141,35 @@ def detect_object(frame: np.ndarray, min_area_px: float = 2500.0) -> Detection |
     )
     saturated = cv2.inRange(hsv, np.array([0, 70, 40], np.uint8), np.array([179, 255, 255], np.uint8))
     mask = cv2.bitwise_or(edges, saturated)
-    mask = cv2.bitwise_and(mask, cv2.bitwise_not(red_mask(frame)))  # the cube is not news
+    mask = cv2.bitwise_and(mask, cv2.bitwise_not(cube_mask(frame)))  # the cube is not news
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, _KERNEL)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, _KERNEL)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
-    contour = max(contours, key=cv2.contourArea)
-    area = float(cv2.contourArea(contour))
-    if area < min_area_px:
+
+    # Largest *plausible* blob, not simply the largest: on a lit table the
+    # biggest contour is usually the room, and skipping past it is the
+    # difference between one prompt about the bottle and an endless prompt
+    # about the wall.
+    contour = None
+    for candidate in sorted(contours, key=cv2.contourArea, reverse=True):
+        area = float(cv2.contourArea(candidate))
+        if area < min_area_px:
+            break
+        box = cv2.boundingRect(candidate)
+        if box[2] <= 0 or box[3] <= 0:
+            continue
+        if area > max_area_frac * frame.shape[0] * frame.shape[1] or _is_background(box, area, frame.shape):
+            continue
+        contour = candidate
+        break
+    if contour is None:
         return None
 
+    area = float(cv2.contourArea(contour))
     x, y, w, h = cv2.boundingRect(contour)
-    if w <= 0 or h <= 0:
-        return None
 
     blob_mask = np.zeros(mask.shape, np.uint8)
     cv2.drawContours(blob_mask, [contour], -1, 255, cv2.FILLED)

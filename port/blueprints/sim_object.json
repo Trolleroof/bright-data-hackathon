@@ -1,0 +1,94 @@
+{
+  "identifier": "sim_object",
+  "title": "Sim Object",
+  "icon": "DefaultProperty",
+  "description": "An object the twin can instantiate, in MuJoCo terms. Written by the import agent from MuJoCo model text found via Bright Data; read back on the next sighting so nothing is researched twice.",
+  "schema": {
+    "properties": {
+      "label": {
+        "title": "Detected label",
+        "type": "string"
+      },
+      "shape": {
+        "title": "MuJoCo geom type",
+        "type": "string",
+        "enum": [
+          "box",
+          "cylinder",
+          "capsule",
+          "sphere"
+        ],
+        "default": "cylinder"
+      },
+      "height_cm": {
+        "title": "Height (cm)",
+        "type": "number"
+      },
+      "width_cm": {
+        "title": "Width (cm)",
+        "type": "number"
+      },
+      "density_kg_m3": {
+        "title": "Density (kg/m^3)",
+        "type": "number"
+      },
+      "material": {
+        "title": "Material",
+        "type": "string"
+      },
+      "rgba": {
+        "title": "RGBA",
+        "type": "string"
+      },
+      "mujoco_source": {
+        "title": "MuJoCo source",
+        "type": "string"
+      },
+      "mujoco_url": {
+        "title": "MuJoCo model URL",
+        "type": "string",
+        "format": "url"
+      },
+      "reasoning": {
+        "title": "Agent reasoning",
+        "type": "string"
+      },
+      "agent": {
+        "title": "Decided by",
+        "type": "string",
+        "enum": [
+          "nim",
+          "offline_reader",
+          "port_cache"
+        ],
+        "default": "offline_reader"
+      },
+      "agent_model": {
+        "title": "Agent model",
+        "type": "string"
+      },
+      "confidence": {
+        "title": "Confidence",
+        "type": "number"
+      },
+      "imports": {
+        "title": "Times imported",
+        "type": "number",
+        "default": 1
+      },
+      "spec_version": {
+        "title": "Spec version",
+        "type": "number"
+      }
+    },
+    "required": []
+  },
+  "relations": {
+    "scraper_job": {
+      "title": "Scraper job",
+      "target": "scraper_job",
+      "required": false,
+      "many": false
+    }
+  }
+}

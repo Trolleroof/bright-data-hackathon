@@ -67,8 +67,13 @@ def _primitive_body_xml(asset: dict[str, Any]) -> str:
     size = (
         f"{radius} {radius} {half_height}" if shape == "box" else f"{radius} {half_height}"
     )
+    # Where on the table it stands. The origin is the arm's own home position,
+    # so an object dropped there is not an obstacle to route around — it is an
+    # object the arm starts inside. The importer picks a spot in the path.
+    pos_x, pos_y = (list(asset.get("pos_xy") or ()) + [0.0, 0.0])[:2]
     return (
-        f'<body name="obstacle" pos="0 0 {round(0.761 + half_height, 4)}">\n'
+        f'<body name="obstacle" pos="{round(float(pos_x), 4)} {round(float(pos_y), 4)} '
+        f'{round(0.761 + half_height, 4)}">\n'
         '      <freejoint name="obstacle_free"/>\n'
         f'      <geom name="obstacle_geom" type="{shape}" size="{size}"\n'
         f'            density="{density}" rgba="{r} {g} {b} {a}"/>\n'

@@ -1,6 +1,6 @@
 """track_cube: every frame, turn the camera image into a table-frame cube x,y.
 
-The AprilTag gives us where the camera is. The red blob gives us where the cube
+The AprilTag gives us where the camera is. The lime-green blob gives us where the cube
 is on screen. Back-project that pixel onto the table plane and you get metres in
 the table frame — so walking the camera moves nothing in the twin.
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from vision.camera import Camera
-from vision.cube import Blob, find_red_blob
+from vision.cube import Blob, find_cube_blob
 from vision.solve import fit_cube
 from vision.tag import TagDetector, TagPose
 
@@ -90,7 +90,7 @@ class CubeTracker:
             return self._publish(replace(self._latest, frame=None))
 
         tag = self.detector.detect(frame, self.camera.intrinsics.matrix, self.camera.intrinsics.distortion)
-        blob = find_red_blob(frame)
+        blob = find_cube_blob(frame)
         raw_xy: tuple[float, float] | None = None
         surface = "?"
         if tag is not None and blob is not None:

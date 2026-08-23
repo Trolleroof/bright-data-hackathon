@@ -334,6 +334,9 @@ class LiveTwin:
                 leftover = model.opt.timestep - (time.time() - step_start)
                 if leftover > 0:
                     time.sleep(leftover)
+        except Exception as exc:  # noqa: BLE001 — keep a twin failure visible in the HUD
+            with self._lock:
+                self._state.error = f"twin: {exc}"
         finally:
             renderer.close()
             with self._lock:

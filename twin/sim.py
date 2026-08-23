@@ -1,7 +1,7 @@
 """Open the live twin window.
 
 Default: sim only. With --camera, track_cube runs: the AprilTag anchors the
-table, the red blob is the cube, and the cube stays planted while you walk the
+table, the lime-green blob is the cube, and the cube stays planted while you walk the
 camera around. Keys in this terminal (not the MuJoCo window):
 
   R  start/stop recording (~3–20 s pick-and-place) → fast-path factory on stop

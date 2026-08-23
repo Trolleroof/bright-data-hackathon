@@ -47,10 +47,39 @@ export default function ControlRoom() {
 
   useEffect(() => {
     fetchStatus(); fetchLive(); fetchTraces(true);
-    const liveTimer = window.setInterval(fetchLive, 500);
+    let socket: WebSocket | null = null;
+    let socketOpen = false;
+    let reconnectTimer: number | undefined;
+    const connectLive = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const port = window.location.port === '3000' ? '8080' : window.location.port;
+      const host = port ? `${window.location.hostname}:${port}` : window.location.hostname;
+      try {
+        socket = new WebSocket(`${protocol}//${host}/api/live/ws`);
+        socket.onopen = () => { socketOpen = true; };
+        socket.onmessage = (event) => {
+          try { setLive({ ...JSON.parse(event.data), backend_online: true }); } catch { /* ignore malformed frames */ }
+        };
+        socket.onclose = () => {
+          socketOpen = false;
+          reconnectTimer = window.setTimeout(connectLive, 1000);
+        };
+        socket.onerror = () => socket?.close();
+      } catch {
+        reconnectTimer = window.setTimeout(connectLive, 1000);
+      }
+    };
+    connectLive();
+    const liveFallback = window.setInterval(() => { if (!socketOpen) fetchLive(); }, 2000);
     const dataTimer = window.setInterval(() => { fetchStatus(); fetchTraces(); }, 3000);
     const clockTimer = window.setInterval(() => setUtcTime(`${new Date().toISOString().slice(11, 19)} UTC`), 1000);
-    return () => { window.clearInterval(liveTimer); window.clearInterval(dataTimer); window.clearInterval(clockTimer); };
+    return () => {
+      socket?.close();
+      window.clearTimeout(reconnectTimer);
+      window.clearInterval(liveFallback);
+      window.clearInterval(dataTimer);
+      window.clearInterval(clockTimer);
+    };
   }, [fetchLive, fetchStatus, fetchTraces]);
 
   const activeTrace = useMemo(() => traces.find((trace) => trace.trace_id === selectedTraceId) || null, [traces, selectedTraceId]);
@@ -65,12 +94,6 @@ export default function ControlRoom() {
       showToast(`Run ${run} recorded`);
     } catch (error) { showToast(error instanceof Error ? error.message : 'Run failed'); }
     finally { setIsTriggering(false); }
-  };
-
-  const clearTraces = async () => {
-    await fetch('/api/traces/clear', { method: 'POST' });
-    setTraces([]); setSelectedTraceId(null); setSelectedSpanId(null);
-    showToast('Traces cleared');
   };
 
   const runProgram = async () => {
@@ -92,7 +115,7 @@ export default function ControlRoom() {
   };
 
   return <div className="flex h-screen flex-col overflow-hidden bg-obsidian-950 text-slate-100">
-    <Header status={status} isTriggering={isTriggering} isProgramRunning={isProgramRunning} onRunA={() => runDemo('A')} onRunB={() => runDemo('B')} onRefresh={() => { fetchLive(); fetchStatus(); fetchTraces(); }} onClear={clearTraces} onRunProgram={runProgram} />
+    <Header isTriggering={isTriggering} isProgramRunning={isProgramRunning} onRunA={() => runDemo('A')} onRunB={() => runDemo('B')} onRefresh={() => { fetchLive(); fetchStatus(); fetchTraces(); }} onRunProgram={runProgram} />
     <main className="flex min-h-0 flex-1">
       <Sidebar traces={traces} selectedTraceId={selectedTraceId} onSelectTrace={(id) => { setSelectedTraceId(id); setSelectedSpanId(null); }} filter={filter} onFilterChange={setFilter} isStreaming={isTriggering} utcTime={utcTime} />
       <div className="min-w-0 flex-1 overflow-y-auto">

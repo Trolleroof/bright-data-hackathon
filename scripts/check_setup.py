@@ -13,6 +13,8 @@ import mujoco
 
 from integrations.brightdata import smoke as brightdata_smoke
 from integrations.config import load_settings
+from integrations.mjcf_search import smoke as mjcf_smoke
+from integrations.nim import smoke as nim_smoke
 from integrations.port import smoke as port_smoke
 from integrations.tracing import smoke as tracing_smoke
 
@@ -71,6 +73,8 @@ def main() -> int:
         ("tracing", tracing_smoke),
         ("port", port_smoke),
         ("brightdata", brightdata_smoke),
+        ("mujoco text", mjcf_smoke),
+        ("nvidia nim", nim_smoke),
         ("mesh", check_mesh),
     ]
     for name, fn in checks:
@@ -83,7 +87,7 @@ def main() -> int:
 
     print("Bidex setup")
     print(f"  tag cm: {settings.apriltag_size_cm or '(not set)'}")
-    print(f"  keys: port={settings.port_ready} brightdata={settings.brightdata_ready}")
+    print(f"  keys: port={settings.port_ready} brightdata={settings.brightdata_ready} nim={settings.nim_ready}")
     print()
     width = max(len(name) for name, _, _ in rows)
     for name, status, detail in rows:

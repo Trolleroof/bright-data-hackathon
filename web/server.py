@@ -7,9 +7,12 @@ Serves the telemetry HUD & Trace Waterfall UI, plus live OpenTelemetry trace API
 - POST /api/traces/clear    -> Clears recorded spans
 - GET  /api/status          -> Service status, tracer readiness, counters
 - GET  /api/live            -> Combined twin + camera state for the live HUD
+- WS   /api/live/ws         -> Combined twin + camera state stream
 - POST /api/live/control    -> start/stop/configure the twin and the camera
 - GET  /api/import          -> Pending object-import prompt / progress / result
-- POST /api/import/decision -> Answer the prompt: {"decision": "import"|"dismiss"}
+- POST /api/import/request  -> Ask for an object by name: {"label": "gray water bottle"}
+- POST /api/import/decision -> {"decision": "scan"|"stop"|"import"|"dismiss"|"reset"}
+                               Scanning is off until asked for.
 - GET  /api/sim/stream      -> MJPEG feed of the headless MuJoCo twin
 - GET  /api/sim/frame       -> Single JPEG of the twin
 - GET  /api/camera/stream   -> MJPEG feed of track_cube with the HUD overlay
@@ -23,10 +26,15 @@ Serves the telemetry HUD & Trace Waterfall UI, plus live OpenTelemetry trace API
 
 from __future__ import annotations
 
+import errno
+import base64
+import hashlib
 import json
 import os
 import queue
 import sys
+import socket
+import struct
 import threading
 import time
 from http import HTTPStatus
@@ -61,9 +69,13 @@ from checks import SUITE, cancel_job, list_checks, public_job, start_job
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 # One MJPEG boundary for both feeds; browsers stream multipart/x-mixed-replace
-# straight into an <img>, so the UI needs no player and no WebSocket.
+# straight into an <img>, so the UI needs no player.
 MJPEG_BOUNDARY = "bidexframe"
 MJPEG_MAX_FPS = 20.0
+# How long a new stream request waits for the producer's first JPEG before
+# giving up with a 503, and how long an open stream tolerates silence.
+MJPEG_FIRST_FRAME_S = 4.0
+MJPEG_IDLE_TIMEOUT_S = 10.0
 
 
 class TraceAPIHandler(SimpleHTTPRequestHandler):
@@ -91,6 +103,8 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             self._handle_sse_stream()
         elif path == "/api/status":
             self._handle_get_status()
+        elif path == "/api/live/ws":
+            self._handle_live_websocket()
         elif path == "/api/live":
             self._handle_get_live()
         elif path == "/api/sim/stream":
@@ -139,11 +153,20 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             self._send_json({"status": "cleared"})
         elif path == "/api/live/control":
             self._handle_live_control()
+        elif path == "/api/import/request":
+            payload = self._read_json_body()
+            label = str(payload.get("label", ""))
+            result = IMPORTER.request(label)
+            self._send_json(result, status=400 if result.get("error") else 200)
         elif path == "/api/import/decision":
             payload = self._read_json_body()
             decision = str(payload.get("decision", "")).lower()
             if decision == "reset":
                 self._send_json(IMPORTER.reset())
+            elif decision in {"scan", "start"}:
+                self._send_json(IMPORTER.set_scanning(True))
+            elif decision in {"stop", "cancel"}:
+                self._send_json(IMPORTER.set_scanning(False))
             elif decision in {"import", "accept", "yes", "dismiss", "decline", "no"}:
                 self._send_json(IMPORTER.decide(decision))
             else:
@@ -246,6 +269,7 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             "tracer_mode": tracer_ready(),
             "port_ready": settings.port_ready,
             "brightdata_ready": settings.brightdata_ready,
+            "nim_ready": settings.nim_ready,
             "total_spans": len(spans),
             "total_traces": len(trees),
         })
@@ -253,8 +277,12 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
     # --- live twin + camera ---------------------------------------------
     def _handle_get_live(self) -> None:
         """One poll for the whole live HUD: twin, camera, and sponsor readiness."""
+        self._send_json(self._live_payload())
+
+    @staticmethod
+    def _live_payload() -> dict:
         settings = load_settings()
-        self._send_json({
+        return {
             "twin": TWIN.state(),
             "camera": CAMERA.state(),
             "object_import": IMPORTER.state(),
@@ -264,7 +292,88 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             "tracer_mode": tracer_ready(),
             "port_ready": settings.port_ready,
             "brightdata_ready": settings.brightdata_ready,
-        })
+            "nim_ready": settings.nim_ready,
+        }
+
+    @staticmethod
+    def _websocket_frame(payload: bytes, opcode: int = 1) -> bytes:
+        """Build one unfragmented server-to-client WebSocket frame."""
+        length = len(payload)
+        if length < 126:
+            header = bytes((0x80 | opcode, length))
+        elif length <= 0xFFFF:
+            header = bytes((0x80 | opcode, 126)) + struct.pack("!H", length)
+        else:
+            header = bytes((0x80 | opcode, 127)) + struct.pack("!Q", length)
+        return header + payload
+
+    @staticmethod
+    def _read_websocket_frame(connection: socket.socket) -> tuple[int, bytes] | None:
+        """Read one client frame; browser frames are always masked."""
+        header = connection.recv(2)
+        if not header:
+            return None
+        if len(header) != 2:
+            raise ConnectionError("partial websocket header")
+        first, second = header
+        length = second & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", connection.recv(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", connection.recv(8))[0]
+        masked = bool(second & 0x80)
+        mask = connection.recv(4) if masked else b""
+        payload = connection.recv(length) if length else b""
+        if len(payload) != length:
+            raise ConnectionError("partial websocket payload")
+        if masked:
+            payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        return first & 0x0F, payload
+
+    def _handle_live_websocket(self) -> None:
+        """Stream live HUD state without a polling request per half-second."""
+        if self.headers.get("Upgrade", "").lower() != "websocket":
+            self._send_json({"error": "websocket upgrade required"}, status=HTTPStatus.UPGRADE_REQUIRED)
+            return
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self._send_json({"error": "missing Sec-WebSocket-Key"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        accept = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+        ).decode()
+        self.connection.sendall(
+            (
+                "HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+            ).encode("ascii")
+        )
+        self.close_connection = True
+        self.connection.settimeout(0.1)
+        try:
+            while True:
+                payload = json.dumps({**self._live_payload(), "backend_online": True}).encode("utf-8")
+                self.connection.sendall(self._websocket_frame(payload))
+                deadline = time.monotonic() + 0.4
+                while time.monotonic() < deadline:
+                    try:
+                        frame = self._read_websocket_frame(self.connection)
+                    except socket.timeout:
+                        continue
+                    if frame is None:
+                        return
+                    opcode, data = frame
+                    if opcode == 8:
+                        self.connection.sendall(self._websocket_frame(data[:125], opcode=8))
+                        return
+                    if opcode == 9:
+                        self.connection.sendall(self._websocket_frame(data[:125], opcode=10))
+                        continue
+                    break
+        except (BrokenPipeError, ConnectionResetError, socket.timeout):
+            pass
 
     def _handle_live_control(self) -> None:
         content_length = int(self.headers.get("Content-Length", 0))
@@ -279,7 +388,17 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
 
         if target == "camera":
             if action == "start":
-                CAMERA.start()
+                state = CAMERA.start()
+                # Answer with a state the UI can trust: either pixels are
+                # flowing, or we say why. Returning "running" before the first
+                # grab makes the feed panel look hung.
+                if state.running and not CAMERA.wait_for_frame(3.0):
+                    self._send_json({
+                        "status": "ok",
+                        "twin": TWIN.state(),
+                        "camera": {**CAMERA.state(), "error": "camera opened but delivered no frame — is another app using it?"},
+                    })
+                    return
             elif action == "stop":
                 CAMERA.stop()
             elif action == "record":
@@ -289,6 +408,7 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
                     return
                 if not CAMERA.running:
                     CAMERA.start()
+                CAMERA.wait_for_frame(3.0)
                 try:
                     prompt_state, bag_path, recorded_skill = CAMERA.toggle_recording(skill)
                 except RuntimeError as exc:
@@ -330,22 +450,48 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(frame)
 
+    @staticmethod
+    def _await_frame(source, timeout: float) -> bytes | None:
+        """Poll a frame source until it yields, or the timeout expires."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            frame = source()
+            if frame is not None:
+                return frame
+            time.sleep(0.05)
+        return source()
+
     def _handle_mjpeg(self, source) -> None:
         """multipart/x-mixed-replace: keep pushing the newest JPEG until the tab closes."""
+        # Never open a stream we cannot feed. A 200 that then goes silent leaves
+        # the <img> hanging with no load and no error, which the UI can only
+        # read as "still opening"; a 503 lets it show the reason and retry.
+        first = self._await_frame(source, MJPEG_FIRST_FRAME_S)
+        if first is None:
+            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "live view is not producing frames")
+            return
+
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={MJPEG_BOUNDARY}")
         self.send_header("Connection", "close")
         self.end_headers()
 
         last_frame: bytes | None = None
+        idle_since = time.monotonic()
         min_period = 1.0 / MJPEG_MAX_FPS
         try:
             while True:
                 frame = source()
                 if frame is None or frame is last_frame:
-                    time.sleep(0.02)  # nothing new; do not burn the wire on duplicates
+                    # Nothing new; do not burn the wire on duplicates. If the
+                    # source stays dry the producer died — close so the client
+                    # reconnects instead of watching a frozen picture.
+                    if time.monotonic() - idle_since > MJPEG_IDLE_TIMEOUT_S:
+                        return
+                    time.sleep(0.02)
                     continue
                 last_frame = frame
+                idle_since = time.monotonic()
                 header = (
                     f"--{MJPEG_BOUNDARY}\r\n"
                     f"Content-Type: image/jpeg\r\n"
@@ -396,9 +542,29 @@ class TraceAPIHandler(SimpleHTTPRequestHandler):
             unsubscribe_spans(sub_q)
 
 
-def run_server(port: int = 8080, host: str = "0.0.0.0") -> None:
+def bind_server(port: int = 8080, host: str = "0.0.0.0") -> ThreadingHTTPServer:
+    """Claim the port before anything expensive opens.
+
+    Grabbing the webcam first and *then* discovering the port is taken leaves
+    the device held by a process that is already dying, so the next run cannot
+    open it either.
+    """
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer((host, port), TraceAPIHandler)
+    try:
+        return ThreadingHTTPServer((host, port), TraceAPIHandler)
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        print(f"\n  port {port} is already in use — another web/server.py is probably running.")
+        print(f"  Reuse it at http://localhost:{port}, or free the port with:")
+        print(f"      kill $(lsof -ti tcp:{port})")
+        print(f"  ...or start this one elsewhere with --port {port + 1}\n")
+        raise SystemExit(1) from None
+
+
+def run_server(port: int = 8080, host: str = "0.0.0.0", server: ThreadingHTTPServer | None = None) -> None:
+    if server is None:
+        server = bind_server(port, host)
     print(f"=======================================================")
     print(f" Flight Recorder HUD & Trace Viewer running at:")
     print(f" http://localhost:{port}")
@@ -425,10 +591,13 @@ if __name__ == "__main__":
         help="what drives the cube in the twin (with --twin)",
     )
     args = parser.parse_args()
+    # Bind first: see bind_server(). Nothing below should touch hardware until
+    # we know this process is the one that will actually serve.
+    server = bind_server(args.port, args.host)
     if args.camera:
         state = CAMERA.start()
         print(f" camera: {'running' if state.running else 'unavailable — ' + str(state.error)}")
     if args.twin:
         TWIN.start(source=args.source)
         print(f" twin: headless render started (source={args.source})")
-    run_server(port=args.port, host=args.host)
+    run_server(port=args.port, host=args.host, server=server)

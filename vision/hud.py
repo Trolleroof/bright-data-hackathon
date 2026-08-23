@@ -10,6 +10,7 @@ import numpy as np
 from vision.tracker import TrackResult
 
 _GREEN = (80, 220, 120)
+_LIME = (50, 255, 50)
 _RED = (60, 60, 235)
 _AMBER = (0, 170, 255)
 _WHITE = (245, 245, 245)
@@ -38,7 +39,11 @@ def _draw_detection(frame: np.ndarray, detection: Any, import_status: str) -> No
     caption = f"{detection.label}  {detection.confidence:.0%}"
     if import_status in _IMPORT_COLORS:
         caption += f"  [{import_status}]"
-    _draw_line(frame, caption, x, max(y - 8, 18), color, scale=0.55)
+    # Above the box normally, inside it when the box starts at the top of the
+    # frame — otherwise the caption lands on the stats block and the two render
+    # over each other into an unreadable smear.
+    caption_y = y - 8 if y > 24 else min(y + 20, frame.shape[0] - 6)
+    _draw_line(frame, caption, x, caption_y, color, scale=0.55)
 
 
 def draw(
@@ -57,7 +62,7 @@ def draw(
         cv2.polylines(frame, [corners], True, _GREEN, 2)
         cv2.putText(frame, "tag 0", tuple(corners[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, _GREEN, 1)
     if result.blob is not None:
-        cv2.drawContours(frame, [result.blob.contour], -1, _RED, 2)
+        cv2.drawContours(frame, [result.blob.contour], -1, _LIME, 2)
         cv2.circle(frame, (int(result.blob.u), int(result.blob.v)), 4, _WHITE, -1)
     if detection is not None:
         _draw_detection(frame, detection, str((import_state or {}).get("status", "IDLE")))

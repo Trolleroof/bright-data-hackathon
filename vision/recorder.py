@@ -10,7 +10,7 @@ from enum import Enum
 import numpy as np
 
 from vision.bag import BagFrame, PromptBag, new_bag_id, save_bag
-from vision.cube import find_not_red_blob
+from vision.cube import find_not_cube_blob
 from vision.tracker import CubeTracker, TrackResult
 
 
@@ -115,7 +115,7 @@ class PhysicalPromptRecorder:
     def _obstacle_xy(self, result: TrackResult) -> tuple[float, float] | None:
         if result.frame is None or result.tag is None:
             return None
-        blob = find_not_red_blob(result.frame)
+        blob = find_not_cube_blob(result.frame)
         if blob is None:
             return None
         matrix = self.tracker.camera.intrinsics.matrix

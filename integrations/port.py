@@ -1,9 +1,17 @@
-"""Port catalog setup and fast-path run sync."""
+"""Port catalog setup, fast-path run sync, and the agent's read path.
+
+Port is not only a place runs are written to. ``sim_object`` entities make it
+the twin's object catalog: the import agent asks Port what it already knows
+about a label *before* it spends a Bright Data search on it, and writes what it
+learned back afterwards. The second sighting of the same bottle is therefore a
+single authenticated GET, not a scrape and an LLM call.
+"""
 
 from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +45,7 @@ _BLUEPRINT_ORDER = (
     "approval",
     "scraper_job",
     "twin_release",
+    "sim_object",
 )
 
 
@@ -77,6 +86,23 @@ def ensure_blueprints(settings: Settings, token: str) -> None:
     for item in load_blueprints():
         upsert_blueprint(settings, token, item)
     _SYNCED_BLUEPRINTS.add(settings.port_api_url)
+
+
+# Port access tokens last an hour; the agent reads on every sighting, and
+# re-authenticating each time would put a network round trip in front of a
+# cache lookup that exists to avoid network round trips.
+_TOKEN_TTL_S = 3000.0
+_TOKEN_CACHE: dict[str, tuple[str, float]] = {}
+
+
+def token(settings: Settings) -> str:
+    """A valid access token, reused until it is nearly expired."""
+    cached = _TOKEN_CACHE.get(settings.port_client_id)
+    if cached and time.monotonic() < cached[1]:
+        return cached[0]
+    fresh = _token(settings)
+    _TOKEN_CACHE[settings.port_client_id] = (fresh, time.monotonic() + _TOKEN_TTL_S)
+    return fresh
 
 
 def _entity_url(settings: Settings, blueprint: str) -> str:
@@ -275,3 +301,134 @@ def smoke() -> str:
     results = [upsert_blueprint(settings, token, item) for item in load_blueprints()]
     _SYNCED_BLUEPRINTS.add(settings.port_api_url)
     return "; ".join(results)
+
+
+# --- read path (the agent's side) -------------------------------------------
+
+
+def get_entity(
+    settings: Settings, token_: str, blueprint: str, identifier: str
+) -> dict[str, Any] | None:
+    """One entity, or None if Port has never heard of it.
+
+    A 404 here is the normal case on a first sighting, so it is not an error:
+    the caller carries on to the scrape.
+    """
+    res = requests.get(
+        f"{_entity_url(settings, blueprint)}/{identifier}",
+        headers=_headers(token_),
+        timeout=20,
+    )
+    if res.status_code == 404:
+        return None
+    res.raise_for_status()
+    return (res.json() or {}).get("entity")
+
+
+def search_entities(
+    settings: Settings,
+    token_: str,
+    blueprint: str,
+    rules: list[dict[str, Any]],
+    *,
+    combinator: str = "and",
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Port's search API, scoped to one blueprint. Returns [] rather than raising."""
+    body = {
+        "combinator": combinator,
+        "rules": [{"property": "$blueprint", "operator": "=", "value": blueprint}, *rules],
+    }
+    try:
+        res = requests.post(
+            f"{settings.port_api_url}/entities/search",
+            headers=_headers(token_),
+            json=body,
+            timeout=20,
+        )
+        res.raise_for_status()
+    except requests.RequestException:
+        return []
+    return ((res.json() or {}).get("entities") or [])[:limit]
+
+
+def object_id(label: str) -> str:
+    """The stable sim_object identifier for a detected label."""
+    return f"obj-{_slug(label)}"
+
+
+def find_sim_object(label: str, settings: Settings | None = None) -> dict[str, Any] | None:
+    """What Port already knows about this label, as flat properties.
+
+    Exact identifier first — the same bottle seen twice — then a label search,
+    which catches "gray water bottle" after "grey water bottle" was catalogued.
+    Any Port failure returns None: the catalog is an accelerator, never a gate.
+    """
+    settings = settings or load_settings()
+    if not settings.port_ready:
+        return None
+    try:
+        token_ = token(settings)
+        entity = get_entity(settings, token_, "sim_object", object_id(label))
+        if entity is None:
+            matches = search_entities(
+                settings, token_, "sim_object",
+                [{"property": "label", "operator": "=", "value": label}],
+                limit=1,
+            )
+            entity = matches[0] if matches else None
+    except (requests.RequestException, KeyError, ValueError):
+        return None
+    if not entity:
+        return None
+    return {
+        "identifier": entity.get("identifier", ""),
+        "title": entity.get("title", ""),
+        **(entity.get("properties") or {}),
+    }
+
+
+def list_sim_objects(settings: Settings | None = None, limit: int = 25) -> list[dict[str, Any]]:
+    """Everything in the twin's Port object catalog, newest-agnostic order."""
+    settings = settings or load_settings()
+    if not settings.port_ready:
+        return []
+    try:
+        entities = search_entities(settings, token(settings), "sim_object", [], limit=limit)
+    except (requests.RequestException, KeyError, ValueError):
+        return []
+    return [
+        {"identifier": item.get("identifier", ""), **(item.get("properties") or {})}
+        for item in entities
+    ]
+
+
+def upsert_sim_object(
+    label: str,
+    properties: dict[str, Any],
+    *,
+    settings: Settings | None = None,
+    relations: dict[str, Any] | None = None,
+) -> str:
+    """Write an imported object into the Port catalog. Never raises at the caller."""
+    settings = settings or load_settings()
+    if not settings.port_ready:
+        return "skipped (no keys)"
+    identifier = object_id(label)
+    try:
+        token_ = token(settings)
+        ensure_blueprints(settings, token_)
+        previous = get_entity(settings, token_, "sim_object", identifier) or {}
+        imports = float((previous.get("properties") or {}).get("imports") or 0) + 1
+        upsert_entity(
+            settings,
+            token_,
+            "sim_object",
+            identifier,
+            title=_title(label),
+            properties={**properties, "label": label, "imports": imports},
+            relations=relations,
+        )
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        return f"failed: {exc}"
+    return identifier

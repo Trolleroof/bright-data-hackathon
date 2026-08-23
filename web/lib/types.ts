@@ -94,7 +94,7 @@ export interface DetectionState {
   aspect: number;
   confidence: number;
   is_gray: boolean;
-  /** True for the grey water bottle: imports as a stub cylinder, no download. */
+  /** Kept for trace compatibility; current imports always search first. */
   hardcoded: boolean;
 }
 
@@ -116,6 +116,16 @@ export interface ObjectImportState {
   source: string | null;
   rung: number | null;
   detail: string;
+  /** Which source produced the geometry: nim | offline_reader | port_cache. */
+  agent: string | null;
+  agent_model: string | null;
+  /** The MuJoCo model whose text the numbers were read out of. */
+  mujoco_url: string | null;
+  reasoning: string | null;
+  /** sim_object entity the spec was written back to. */
+  port_entity: string | null;
+  /** Object scanning is opt-in; nothing is proposed while this is false. */
+  scanning?: boolean;
   error: string | null;
   asset: Record<string, unknown> | null;
   started_at: number | null;
@@ -151,6 +161,8 @@ export interface LiveState {
   tracer_mode: string;
   port_ready: boolean;
   brightdata_ready: boolean;
+  /** NVIDIA NIM is configured; false means the agent uses its offline reader. */
+  nim_ready?: boolean;
 }
 
 /* --- Check runner: headless demo scripts from the dashboard ---------------- */

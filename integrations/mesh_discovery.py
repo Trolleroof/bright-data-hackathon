@@ -81,7 +81,7 @@ def _ext_of(url: str, extensions: list[str]) -> str | None:
 _GITHUB_BLOB = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/blob/(.+)$", re.IGNORECASE)
 
 
-def _direct_url(url: str) -> str:
+def direct_url(url: str) -> str:
     """github.com/o/r/blob/... is an HTML page; the file lives on raw.\u200b...
 
     MuJoCo's asset repos (Menagerie, mujoco_scanned_objects) are GitHub trees,
@@ -93,6 +93,9 @@ def _direct_url(url: str) -> str:
         return url
     owner, repo, rest = match.groups()
     return f"https://raw.githubusercontent.com/{owner}/{repo}/{rest.split('?')[0]}"
+
+
+_direct_url = direct_url  # historical name, still used below
 
 
 def asset_links(html: str, base_url: str, extensions: list[str]) -> list[str]:

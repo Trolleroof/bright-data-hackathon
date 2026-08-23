@@ -43,6 +43,9 @@ mesh:
   # Hard caps so a stray 400 MB scan cannot stall the demo.
   max_bytes: 33554432
   max_pages_per_source: 2
+  # Hard ceiling on documents fetched per import. Each Web Unlocker fetch is
+  # seconds, and an operator is watching a spinner while they run.
+  max_fetches: 6
   collision_faces: 400
   extensions: [".stl", ".glb", ".gltf", ".obj", ".ply", ".usdz"]
 
@@ -75,3 +78,49 @@ mesh:
     - name: open_web
       query: "{label} 3d model stl free download"
       host: ""
+
+# --- MuJoCo text search (replaces the mesh download) -------------------------
+# The old path downloaded binary meshes and fitted them. This one never
+# downloads geometry: it searches MuJoCo's own model ecosystem for an object
+# *similar* to what the camera saw, reads the MJCF/README **text**, and hands
+# that text to the agent, which reasons its way to a sized primitive. Text is
+# the whole payload — no .stl, no trimesh, no decimation.
+mjcf:
+  # Plain-text things worth reading. GitHub blob URLs are rewritten to raw.
+  extensions: [".xml", ".mjcf", ".md", ".txt"]
+  max_pages_per_source: 2
+  # Hard ceiling on documents fetched per import. Each Web Unlocker fetch is
+  # seconds, and an operator is watching a spinner while they run.
+  max_fetches: 6
+  # Anything longer is truncated before it reaches the agent; MJCF bodies of
+  # interest sit near the top of a model file.
+  max_chars_per_doc: 12000
+
+  # Colour words the detector prepends are dropped before searching: "gray"
+  # narrows a MuJoCo query to nothing, because model files are not catalogued
+  # by colour. The agent still sees the full label.
+  drop_words: [gray, grey, red, orange, yellow, green, cyan, blue, purple, white, black, dark, light]
+
+  # MuJoCo first, and only MuJoCo: the point of this path is that the geometry
+  # vocabulary we copy from is already physics-authored (metres, densities,
+  # sane primitives), so the agent is translating, not inventing.
+  #
+  # Query shapes are chosen for what SERP actually returns: a bare `site:`
+  # filter plus a repo name yields zero results, while naming the repo as a
+  # keyword surfaces the blob URLs that hold real MJCF.
+  sources:
+    - name: mujoco_scanned_objects
+      query: "mujoco_scanned_objects {label} model.xml github"
+      host: ""
+    - name: mujoco_mjcf
+      query: "mujoco mjcf {label} xml geom body"
+      host: ""
+    - name: mujoco_menagerie
+      query: "mujoco_menagerie {label} xml model github"
+      host: ""
+    - name: mujoco_github
+      query: "github mujoco {label} model.xml worldbody"
+      host: ""
+    - name: mujoco_docs
+      query: "site:mujoco.readthedocs.io {label} geom size density body"
+      host: mujoco.readthedocs.io

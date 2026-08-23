@@ -19,6 +19,9 @@ class Settings:
     brightdata_serp_zone: str
     brightdata_unlocker_zone: str
     brightdata_catalog_url: str
+    nvidia_api_key: str
+    nvidia_base_url: str
+    nvidia_model: str
     apriltag_size_cm: str
     camera_index: int
     camera_fov_deg: float
@@ -39,6 +42,11 @@ class Settings:
     @property
     def port_ready(self) -> bool:
         return bool(self.port_client_id and self.port_client_secret)
+
+    @property
+    def nim_ready(self) -> bool:
+        """NVIDIA NIM can be called. False means the agent uses its offline reader."""
+        return bool(self.nvidia_api_key and self.nvidia_base_url and self.nvidia_model)
 
     @property
     def brightdata_ready(self) -> bool:
@@ -72,6 +80,9 @@ def load_settings() -> Settings:
         brightdata_serp_zone=os.getenv("BRIGHTDATA_SERP_ZONE", "serp_api1").strip(),
         brightdata_unlocker_zone=os.getenv("BRIGHTDATA_UNLOCKER_ZONE", "").strip(),
         brightdata_catalog_url=os.getenv("BRIGHTDATA_CATALOG_URL", "").strip(),
+        nvidia_api_key=os.getenv("NVIDIA_API_KEY", "").strip(),
+        nvidia_base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip(),
+        nvidia_model=os.getenv("NVIDIA_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1").strip(),
         apriltag_size_cm=os.getenv("APRILTAG_SIZE_CM", "").strip(),
         camera_index=_int("CAMERA_INDEX", 0),
         camera_fov_deg=_float("CAMERA_FOV_DEG", 60.0),

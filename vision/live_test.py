@@ -21,9 +21,18 @@ class _Recorder:
 def main() -> None:
     camera = LiveCamera()
     camera._recorder, camera._latest = _Recorder(), object()  # browser path; no webcam needed
-    camera._start_factory = lambda *_: None
+    factory_calls = []
+
+    def start_factory(*args):
+        # The bag must be consumed before the factory is launched; otherwise
+        # the capture loop can launch the same run a second time.
+        assert camera._recorder.last_bag_path is None
+        factory_calls.append(args)
+
+    camera._start_factory = start_factory
     assert camera.toggle_recording("A") == ("RECORDING", None, "A")
     assert camera.toggle_recording("B") == ("PROMPTED", "recordings/bag_test.json", "A")
+    assert factory_calls == [("recordings/bag_test.json", "A")]
     print("live recording toggle: PASS")
 
 

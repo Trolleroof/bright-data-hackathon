@@ -47,6 +47,7 @@ class LiveCamera:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._start_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._jpeg: bytes | None = None
@@ -66,50 +67,81 @@ class LiveCamera:
         return self._thread is not None and self._thread.is_alive()
 
     def start(self) -> CameraState:
-        with self._lock:
+        # `_start_lock` serialises starts; `_lock` only guards published state.
+        # Opening a webcam takes seconds, and holding the state lock across it
+        # would stall every /api/live poll until they time out — which the UI
+        # can only read as "backend offline", killing the feed being started.
+        with self._start_lock:
             if self.running:
-                return self._state
+                with self._lock:
+                    return self._state
+
             self._stop.clear()
             try:
                 from vision.track import build_tracker  # noqa: PLC0415 — optional dependency
 
                 camera, tracker = build_tracker()
             except Exception as exc:  # noqa: BLE001 — a missing webcam must not 500 the UI
-                self._state = CameraState(running=False, error=str(exc))
-                return self._state
+                with self._lock:
+                    self._state = CameraState(running=False, error=str(exc))
+                    return self._state
             from vision.recorder import PhysicalPromptRecorder  # noqa: PLC0415
 
             self._camera, self._tracker = camera, tracker
             self._recorder = PhysicalPromptRecorder(tracker)
-            self._state = CameraState(
-                running=True, width=camera.width, height=camera.height
-            )
+            with self._lock:
+                self._state = CameraState(
+                    running=True, width=camera.width, height=camera.height
+                )
             self._thread = threading.Thread(
                 target=self._loop, name="live-camera", daemon=True
             )
             self._thread.start()
-            return self._state
+            with self._lock:
+                return self._state
 
     def stop(self) -> CameraState:
-        self._stop.set()
-        thread = self._thread
-        if thread is not None:
-            thread.join(timeout=2.0)
-        self._thread = None
-        if self._camera is not None:
-            try:
-                self._camera.close()
-            except Exception:  # noqa: BLE001 — closing a dead camera is not an error
-                pass
-        self._camera = None
-        self._tracker = None
-        self._recorder = None
-        self._latest = None
-        self._recording_skill = None
-        with self._lock:
-            self._state.running = False
-            self._jpeg = None
-        return self._state
+        # Same lock as start(): a stop racing a start would otherwise close the
+        # device out from under a half-built tracker and wedge the webcam.
+        with self._start_lock:
+            self._stop.set()
+            thread = self._thread
+            if thread is not None:
+                thread.join(timeout=2.0)
+            self._thread = None
+            if self._camera is not None:
+                try:
+                    self._camera.close()
+                except Exception:  # noqa: BLE001 — closing a dead camera is not an error
+                    pass
+            self._camera = None
+            self._tracker = None
+            self._recorder = None
+            self._latest = None
+            self._recording_skill = None
+            with self._lock:
+                self._state.running = False
+                self._state.prompt_state = "IDLE"
+                self._state.recording_skill = None
+                self._jpeg = None
+                return self._state
+
+    def wait_for_frame(self, timeout: float = 3.0) -> bool:
+        """Block until the capture loop has produced a frame (or give up).
+
+        `start()` only spawns the thread; opening a webcam takes a moment. Any
+        caller that needs pixels — the recorder, or a control response the UI
+        will act on — should wait rather than race the first grab.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.running:
+                return False
+            with self._lock:
+                if self._jpeg is not None and self._latest is not None:
+                    return True
+            time.sleep(0.02)
+        return False
 
     def toggle_recording(self, skill: str) -> tuple[str, str | None, str | None]:
         """Start or stop the real camera recorder; returns state, bag, skill."""
@@ -125,15 +157,22 @@ class LiveCamera:
                 recorded_skill = self._recording_skill
                 if state is PromptState.PROMPTED and bag_path and recorded_skill:
                     factory_input = (bag_path, recorded_skill)
+                    # Consume the bag before releasing the lock. The capture
+                    # loop also watches this field; leaving it set lets both
+                    # paths launch the same factory run.
+                    self._recorder.last_bag_path = None
             else:
                 state = self._recorder.start()
                 self._recording_skill = skill
                 bag_path = None
                 recorded_skill = skill
+            # The loop thread rebuilds _state once per frame, so a control
+            # response read right now would still say IDLE. Publish the toggle
+            # here so callers never see a stale recording state.
+            self._state.prompt_state = state.value
+            self._state.recording_skill = recorded_skill
         if factory_input:
             self._start_factory(*factory_input)
-            with self._lock:
-                self._recorder.last_bag_path = None
         return state.value, bag_path, recorded_skill
 
     @staticmethod
@@ -142,7 +181,11 @@ class LiveCamera:
             try:
                 from factory.fast_path import run_fast_path
 
-                run_fast_path(bag_path, append=skill == "B")
+                result = run_fast_path(bag_path, append=skill == "B")
+                if result.replay.passed:
+                    from twin.live import TWIN
+
+                    TWIN.configure(source="skill")
             except Exception as exc:  # noqa: BLE001 - the recording stays on disk
                 print(f"  recording factory failed: {exc}", flush=True)
 
@@ -174,7 +217,11 @@ class LiveCamera:
                 continue
 
             now = time.monotonic()
-            if result.frame is not None and now >= next_detect:
+            # Scanning is opt-in, so when it is off the detector does not run:
+            # no per-frame contour pass, and nothing to draw a box around.
+            if not IMPORTER.scanning:
+                self._detection = None
+            elif result.frame is not None and now >= next_detect:
                 next_detect = now + detect_period_s
                 try:
                     self._detection = detect_object(result.frame)

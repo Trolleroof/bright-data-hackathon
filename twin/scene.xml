@@ -21,7 +21,7 @@
              width="512" height="512"/>
     <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.05"/>
     <material name="table" rgba="0.76 0.70 0.60 1"/>
-    <material name="cube" rgba="0.86 0.12 0.12 1"/>
+    <material name="cube" rgba="0.55 1.0 0.15 1"/>
     <material name="target" rgba="0.18 0.72 0.38 0.85"/>
     <material name="tag" rgba="0.06 0.06 0.06 1"/>
     <material name="obstacle" rgba="0.15 0.55 0.95 0.75"/>
